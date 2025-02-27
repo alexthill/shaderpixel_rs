@@ -8,13 +8,22 @@ use vulkano::{
         },
         Instance, InstanceExtensions,
     },
-    Validated, VulkanError,
+    Validated, VulkanError, VulkanLibrary,
 };
 
 #[cfg(debug_assertions)]
 const ENABLE_VALIDATION_LAYERS: bool = true;
 #[cfg(not(debug_assertions))]
 const ENABLE_VALIDATION_LAYERS: bool = false;
+
+pub fn check_layer_support(library: &VulkanLibrary, layer_name: &str) -> Result<bool, VulkanError> {
+    for layer in library.layer_properties()? {
+        if layer.name() == layer_name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 pub fn get_debug_extensions_and_layers() -> (InstanceExtensions, Vec<String>) {
     let extensions = InstanceExtensions {
@@ -33,9 +42,12 @@ pub fn get_debug_extensions_and_layers() -> (InstanceExtensions, Vec<String>) {
 
 pub fn setup_debug_callback(
     instance: Arc::<Instance>,
-) -> Result<DebugUtilsMessenger, Validated<VulkanError>> {
+) -> Result<Option<DebugUtilsMessenger>, Validated<VulkanError>> {
+    if !ENABLE_VALIDATION_LAYERS {
+        return Ok(None);
+    }
     unsafe {
-        DebugUtilsMessenger::new(
+        let debug = DebugUtilsMessenger::new(
             instance,
             DebugUtilsMessengerCreateInfo {
                 message_severity: DebugUtilsMessageSeverity::ERROR
@@ -64,6 +76,7 @@ pub fn setup_debug_callback(
                     },
                 ))
             },
-        )
+        )?;
+        Ok(Some(debug))
     }
 }

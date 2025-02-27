@@ -15,7 +15,7 @@ use vulkano::{
     pipeline::graphics::viewport::Viewport,
     render_pass::RenderPass,
     shader::ShaderModule,
-    swapchain::{self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
+    swapchain::{self, PresentFuture, PresentMode, Surface, Swapchain, SwapchainAcquireFuture,
         SwapchainCreateInfo, SwapchainPresentInfo},
     sync::{
         self,
@@ -44,9 +44,9 @@ pub struct App {
     fs: Arc<ShaderModule>,
 
     // If this falls out of scope then there will be no more debug events.
-    // Put it at the end so that it will get dropped last.
+    // Put it at the end so that it gets dropped last.
     #[allow(dead_code)]
-    debug: DebugUtilsMessenger,
+    debug: Option<DebugUtilsMessenger>,
 
 }
 
@@ -59,6 +59,11 @@ impl App {
             .expect("no local Vulkan library/DLL");
 
         let (debug_extensions, debug_layers) = get_debug_extensions_and_layers();
+        for layer in debug_layers.iter() {
+            if !check_layer_support(&library, layer).unwrap() {
+                panic!("Layer {layer} is not supported");
+            }
+        }
         let required_extensions = Surface::required_extensions(window.as_ref())
             .expect("failed to get required extensions");
         let enabled_extensions = required_extensions.union(&debug_extensions);
@@ -122,6 +127,7 @@ impl App {
                     image_extent: dimensions.into(),
                     image_usage: ImageUsage::COLOR_ATTACHMENT,
                     composite_alpha,
+                    present_mode: PresentMode::Fifo,
                     ..Default::default()
                 },
             )
