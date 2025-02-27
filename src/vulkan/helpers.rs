@@ -7,6 +7,7 @@ use vulkano::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
         SubpassBeginInfo, SubpassContents,
     },
+    descriptor_set::DescriptorSet,
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
         Device, DeviceExtensions, Queue, QueueFlags
@@ -24,7 +25,7 @@ use vulkano::{
             GraphicsPipelineCreateInfo,
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
-        GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo,
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     shader::ShaderModule,
@@ -46,8 +47,15 @@ pub mod vs {
 
             layout(location = 0) in vec2 position;
 
+            layout(set = 0, binding = 0) uniform UniformBufferObject {
+                mat4 model;
+                mat4 view;
+                mat4 proj;
+            } ubo;
+
             void main() {
-                gl_Position = vec4(position, 0.0, 1.0);
+                mat4 mvp = ubo.proj * ubo.view * ubo.model;
+                gl_Position = mvp * vec4(position, 0.0, 1.0);
             }
         ",
     }
@@ -189,11 +197,14 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &[Arc<Framebuffer>],
+    descriptor_sets: &[Arc<DescriptorSet>],
     vertex_buffer: &Subbuffer<[MyVertex]>,
+    index_buffer: &Subbuffer<[u16]>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
-        .map(|framebuffer| {
+        .enumerate()
+        .map(|(i, framebuffer)| {
             let mut builder = AutoCommandBufferBuilder::primary(
                 command_buffer_allocator.clone(),
                 queue.queue_family_index(),
@@ -215,9 +226,18 @@ pub fn get_command_buffers(
                 .unwrap()
                 .bind_pipeline_graphics(pipeline.clone())
                 .unwrap()
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    0,
+                    descriptor_sets[i].clone(),
+                )
+                .unwrap()
                 .bind_vertex_buffers(0, vertex_buffer.clone())
+                .unwrap()
+                .bind_index_buffer(index_buffer.clone())
                 .unwrap();
-            unsafe { builder.draw(vertex_buffer.len() as u32, 1, 0, 0) }
+            unsafe { builder.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0) }
                 .unwrap()
                 .end_render_pass(Default::default())
                 .unwrap();

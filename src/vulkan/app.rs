@@ -3,42 +3,55 @@ use super::helpers::*;
 
 use std::sync::Arc;
 
+use glam::{Mat3, Mat4, Vec3};
 use vulkano::{
+    buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::{CommandBufferExecFuture, PrimaryAutoCommandBuffer},
     command_buffer::allocator::StandardCommandBufferAllocator,
+    command_buffer::{CommandBufferExecFuture, PrimaryAutoCommandBuffer},
+    descriptor_set::allocator::StandardDescriptorSetAllocator,
+    descriptor_set::{DescriptorSet, WriteDescriptorSet},
     device::{Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo},
     image::ImageUsage,
-    instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     instance::debug::DebugUtilsMessenger,
+    instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::graphics::viewport::Viewport,
+    pipeline::Pipeline,
     render_pass::RenderPass,
     shader::ShaderModule,
-    swapchain::{self, PresentFuture, PresentMode, Surface, Swapchain, SwapchainAcquireFuture,
-        SwapchainCreateInfo, SwapchainPresentInfo},
+    swapchain::{
+        self,
+        PresentFuture, PresentMode, Surface, Swapchain, SwapchainAcquireFuture,
+        SwapchainCreateInfo, SwapchainPresentInfo,
+    },
     sync::{
         self,
         future::{FenceSignalFuture, JoinFuture},
-        GpuFuture
+        GpuFuture,
     },
     Validated, VulkanError,
 };
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+type ComplexFenceFutureType = PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>;
+
 pub struct App {
     #[allow(dead_code)]
     instance: Arc<Instance>,
     device: Arc<Device>,
+    queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
     render_pass: Arc<RenderPass>,
     viewport: Viewport,
+    descriptor_sets: Vec<Arc<DescriptorSet>>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    queue: Arc<Queue>,
+    uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
     vertex_buffer: Subbuffer<[MyVertex]>,
-    fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>>>>,
+    index_buffer: Subbuffer<[u16]>,
+    fences: Vec<Option<Arc<FenceSignalFuture<ComplexFenceFutureType>>>>,
     previous_fence_i: usize,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
@@ -148,8 +161,11 @@ impl App {
         let vertex3 = MyVertex {
             position: [0.5, -0.25],
         };
+        let vertex4 = MyVertex {
+            position: [0.5, 0.75],
+        };
         let vertex_buffer = Buffer::from_iter(
-            memory_allocator,
+            memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
@@ -159,9 +175,22 @@ impl App {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vec![vertex1, vertex2, vertex3],
-        )
-        .unwrap();
+            vec![vertex1, vertex2, vertex3, vertex4],
+        ).unwrap();
+
+        let index_buffer = Buffer::from_iter(
+            memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::INDEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            [0, 1, 2, 1, 3, 2],
+        ).unwrap();
 
         let vs = vs::load(device.clone()).expect("failed to create shader module");
         let fs = fs::load(device.clone()).expect("failed to create shader module");
@@ -180,6 +209,39 @@ impl App {
             viewport.clone(),
         );
 
+        let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
+
+        let uniform_buffer_allocator = SubbufferAllocator::new(
+            memory_allocator.clone(),
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::UNIFORM_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
+
+        let uniform_buffers = (0..images.len()).map(|_| {
+            uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
+        }).collect::<Vec<_>>();
+
+        let descriptor_sets = uniform_buffers
+            .iter()
+            .map(|buffer| {
+                DescriptorSet::new(
+                    descriptor_set_allocator.clone(),
+                    pipeline.layout().set_layouts()[0].clone(),
+                    [WriteDescriptorSet::buffer(0, buffer.clone())],
+                    [],
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+
         let command_buffer_allocator =
             Arc::new(StandardCommandBufferAllocator::new(device.clone(), Default::default()));
 
@@ -188,7 +250,9 @@ impl App {
             &queue,
             &pipeline,
             &framebuffers,
+            &descriptor_sets,
             &vertex_buffer,
+            &index_buffer,
         );
 
         let frames_in_flight = images.len();
@@ -198,13 +262,16 @@ impl App {
             instance,
             debug,
             device,
+            queue,
             swapchain,
             render_pass,
             viewport,
+            descriptor_sets,
             command_buffer_allocator,
             command_buffers,
-            queue,
+            uniform_buffers,
             vertex_buffer,
+            index_buffer,
             fences,
             previous_fence_i: 0,
             vs,
@@ -236,11 +303,13 @@ impl App {
             &self.queue,
             &new_pipeline,
             &new_framebuffers,
+            &self.descriptor_sets,
             &self.vertex_buffer,
+            &self.index_buffer,
         );
     }
 
-    pub fn draw(&mut self) -> bool {
+    pub fn draw(&mut self, time: f32) -> bool {
         let (image_i, suboptimal, acquire_future) =
             match swapchain::acquire_next_image(self.swapchain.clone(), None)
                 .map_err(Validated::unwrap)
@@ -271,6 +340,8 @@ impl App {
             Some(fence) => fence.boxed(),
         };
 
+        self.update_uniform_buffer(image_i, time);
+
         let future = previous_future
             .join(acquire_future)
             .then_execute(self.queue.clone(), self.command_buffers[image_i as usize].clone())
@@ -295,5 +366,28 @@ impl App {
 
         self.previous_fence_i = image_i as _;
         swapchain_dirty
+    }
+
+    fn update_uniform_buffer(&mut self, image_index: u32, time: f32) {
+        let rotation = Mat3::from_rotation_y(time);
+        let aspect_ratio = self.swapchain.image_extent()[0] as f32
+            / self.swapchain.image_extent()[1] as f32;
+        let view = Mat4::look_at_rh(
+            Vec3::new(0.3, 0.3, 1.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
+        );
+        let proj = Mat4::perspective_rh_gl(
+            std::f32::consts::FRAC_PI_2,
+            aspect_ratio,
+            0.01,
+            100.0,
+        );
+
+        *self.uniform_buffers[image_index as usize].write().unwrap() = vs::UniformBufferObject {
+            model: Mat4::from_mat3(rotation).to_cols_array_2d(),
+            view: view.to_cols_array_2d(),
+            proj: proj.to_cols_array_2d(),
+        };
     }
 }

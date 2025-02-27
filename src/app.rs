@@ -1,6 +1,9 @@
 use crate::vulkan::VkApp;
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::Instant,
+};
 
 use anyhow::Context;
 use winit::{
@@ -16,10 +19,21 @@ const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const TITLE: &str = "shaderpixel";
 
+struct FpsInfo {
+    last_frame: Instant,
+    last_count_start: Instant,
+    frame_count: u32,
+}
+
 #[derive(Default)]
 pub struct App {
     app: Option<(Arc<Window>, VkApp)>,
     swapchain_dirty: bool,
+
+    /// Time passed since app start in fractional seconds.
+    time: f32,
+    /// Information about frame timing.
+    fps_info: Option<FpsInfo>,
 }
 
 impl App {
@@ -71,6 +85,27 @@ impl ApplicationHandler for App {
 
         let (window, vk_app) = self.app.as_mut().unwrap();
 
+        let now = Instant::now();
+        let fps_info = self.fps_info.get_or_insert(FpsInfo {
+            last_frame: now,
+            last_count_start: now,
+            frame_count: 0,
+        });
+        self.time += fps_info.last_frame.elapsed().as_secs_f32();
+        fps_info.last_frame = now;
+        fps_info.frame_count += 1;
+        {
+            let time = fps_info.last_count_start.elapsed();
+            if time.as_millis() > 1000 {
+                use std::io::Write;
+
+                eprint!("fps: {:.2}        \r", fps_info.frame_count as f32 / time.as_secs_f32());
+                std::io::stdout().flush().unwrap();
+                fps_info.last_count_start = now;
+                fps_info.frame_count = 0;
+            }
+        }
+
         if self.swapchain_dirty {
             let size = window.inner_size();
             if size.width == 0 || size.height == 0 {
@@ -79,7 +114,7 @@ impl ApplicationHandler for App {
             vk_app.recreate_swapchain(window.inner_size());
         }
 
-        self.swapchain_dirty = vk_app.draw();
+        self.swapchain_dirty = vk_app.draw(self.time);
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
