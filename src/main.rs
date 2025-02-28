@@ -1,4 +1,5 @@
 mod app;
+mod model;
 mod vulkan;
 
 use app::App;

@@ -1,9 +1,11 @@
+use crate::model::obj::NormalizedObj;
 use super::debug::*;
 use super::helpers::*;
+use super::vertex::VertexPos;
 
 use std::sync::Arc;
 
-use glam::{Mat3, Mat4, Vec3};
+use glam::Mat4;
 use vulkano::{
     buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -11,7 +13,7 @@ use vulkano::{
     command_buffer::{CommandBufferExecFuture, PrimaryAutoCommandBuffer},
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
-    device::{Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo},
+    device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     image::ImageUsage,
     instance::debug::DebugUtilsMessenger,
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
@@ -35,22 +37,25 @@ use vulkano::{
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-type ComplexFenceFutureType = PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>;
+type ComplexFenceFutureType = PresentFuture<CommandBufferExecFuture<JoinFuture<Box< dyn GpuFuture>, SwapchainAcquireFuture>>>;
 
 pub struct App {
+    pub view_matrix: Mat4,
+
     #[allow(dead_code)]
     instance: Arc<Instance>,
     device: Arc<Device>,
     queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
+    memory_allocator: Arc<StandardMemoryAllocator>,
     render_pass: Arc<RenderPass>,
     viewport: Viewport,
     descriptor_sets: Vec<Arc<DescriptorSet>>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
-    vertex_buffer: Subbuffer<[MyVertex]>,
-    index_buffer: Subbuffer<[u16]>,
+    vertex_buffer: Subbuffer<[VertexPos]>,
+    index_buffer: Subbuffer<[u32]>,
     fences: Vec<Option<Arc<FenceSignalFuture<ComplexFenceFutureType>>>>,
     previous_fence_i: usize,
     vs: Arc<ShaderModule>,
@@ -64,7 +69,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(window: Arc<Window>) -> Self {
+    pub fn new(
+        window: Arc<Window>,
+        model: NormalizedObj,
+    ) -> Self {
         log::debug!("creating vulkan app");
 
         let dimensions = window.inner_size();
@@ -101,9 +109,16 @@ impl App {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
         };
+        let device_features = DeviceFeatures {
+            geometry_shader: true,
+            ..DeviceFeatures::empty()
+        };
 
         let (physical_device, queue_family_index) =
             select_physical_device(&instance, &surface, &device_extensions);
+        if !physical_device.supported_features().contains(&device_features) {
+            panic!("the physical device does not support all required features");
+        }
 
         let (device, mut queues) = Device::new(
             physical_device.clone(),
@@ -112,7 +127,8 @@ impl App {
                     queue_family_index,
                     ..Default::default()
                 }],
-                enabled_extensions: device_extensions, // new
+                enabled_extensions: device_extensions,
+                enabled_features: device_features,
                 ..Default::default()
             },
         )
@@ -147,23 +163,14 @@ impl App {
             .unwrap()
         };
 
-        let render_pass = get_render_pass(device.clone(), swapchain.clone());
-        let framebuffers = get_framebuffers(&images, render_pass.clone());
-
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
-        let vertex1 = MyVertex {
-            position: [-0.5, -0.5],
-        };
-        let vertex2 = MyVertex {
-            position: [0.0, 0.5],
-        };
-        let vertex3 = MyVertex {
-            position: [0.5, -0.25],
-        };
-        let vertex4 = MyVertex {
-            position: [0.5, 0.75],
-        };
+        let render_pass = get_render_pass(device.clone(), swapchain.clone());
+        let depth_buffer = create_depth_buffer(memory_allocator.clone(), images[0].extent());
+        let framebuffers = get_framebuffers(&images, &depth_buffer, render_pass.clone());
+
+        let (vertices, indices, _) = load_model(model);
+
         let vertex_buffer = Buffer::from_iter(
             memory_allocator.clone(),
             BufferCreateInfo {
@@ -175,7 +182,7 @@ impl App {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vec![vertex1, vertex2, vertex3, vertex4],
+            vertices 
         ).unwrap();
 
         let index_buffer = Buffer::from_iter(
@@ -189,7 +196,7 @@ impl App {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            [0, 1, 2, 1, 3, 2],
+            indices,
         ).unwrap();
 
         let vs = vs::load(device.clone()).expect("failed to create shader module");
@@ -259,11 +266,13 @@ impl App {
         let fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
 
         Self {
+            view_matrix: Mat4::IDENTITY,
             instance,
             debug,
             device,
             queue,
             swapchain,
+            memory_allocator,
             render_pass,
             viewport,
             descriptor_sets,
@@ -286,9 +295,14 @@ impl App {
                 ..self.swapchain.create_info()
             })
             .expect("failed to recreate swapchain");
+        let depth_buffer = create_depth_buffer(self.memory_allocator.clone(), new_images[0].extent());
 
         self.swapchain = new_swapchain;
-        let new_framebuffers = get_framebuffers(&new_images, self.render_pass.clone());
+        let new_framebuffers = get_framebuffers(
+            &new_images,
+            &depth_buffer,
+            self.render_pass.clone(),
+        );
 
         self.viewport.extent = dimensions.into();
         let new_pipeline = get_pipeline(
@@ -368,25 +382,19 @@ impl App {
         swapchain_dirty
     }
 
-    fn update_uniform_buffer(&mut self, image_index: u32, time: f32) {
-        let rotation = Mat3::from_rotation_y(time);
+    fn update_uniform_buffer(&mut self, image_index: u32, _time: f32) {
         let aspect_ratio = self.swapchain.image_extent()[0] as f32
             / self.swapchain.image_extent()[1] as f32;
-        let view = Mat4::look_at_rh(
-            Vec3::new(0.3, 0.3, 1.0),
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, -1.0, 0.0),
-        );
-        let proj = Mat4::perspective_rh_gl(
-            std::f32::consts::FRAC_PI_2,
+        let proj = Mat4::perspective_rh(
+            75_f32.to_radians(),
             aspect_ratio,
             0.01,
-            100.0,
+            200.0,
         );
 
         *self.uniform_buffers[image_index as usize].write().unwrap() = vs::UniformBufferObject {
-            model: Mat4::from_mat3(rotation).to_cols_array_2d(),
-            view: view.to_cols_array_2d(),
+            model: Mat4::IDENTITY.to_cols_array_2d(),
+            view: self.view_matrix.to_cols_array_2d(),
             proj: proj.to_cols_array_2d(),
         };
     }

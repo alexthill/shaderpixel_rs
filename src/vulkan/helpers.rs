@@ -1,7 +1,11 @@
+use crate::model::obj::NormalizedObj;
+use super::vertex::{MyVertexTrait, VertexPos};
+
 use std::sync::Arc;
 
+use glam::Vec3;
 use vulkano::{
-    buffer::{BufferContents, Subbuffer},
+    buffer::Subbuffer,
     command_buffer::{
         allocator::StandardCommandBufferAllocator,
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
@@ -12,11 +16,18 @@ use vulkano::{
         physical::{PhysicalDevice, PhysicalDeviceType},
         Device, DeviceExtensions, Queue, QueueFlags
     },
-    image::{view::ImageView, Image},
+    format::{ClearValue, Format},
+    image::{
+        view::ImageView,
+        sys::ImageCreateInfo,
+        Image, ImageType, ImageUsage,
+    },
     instance::Instance,
+    memory::allocator::{AllocationCreateInfo, MemoryAllocator},
     pipeline::{
         graphics::{
             color_blend::{ColorBlendAttachmentState, ColorBlendState},
+            depth_stencil::{DepthState, DepthStencilState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
@@ -32,20 +43,13 @@ use vulkano::{
     swapchain::{Surface, Swapchain},
 };
 
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-pub struct MyVertex {
-    #[format(R32G32_SFLOAT)]
-    pub position: [f32; 2],
-}
-
 pub mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
         src: r"
             #version 460
 
-            layout(location = 0) in vec2 position;
+            layout(location = 0) in vec3 position;
 
             layout(set = 0, binding = 0) uniform UniformBufferObject {
                 mat4 model;
@@ -55,7 +59,8 @@ pub mod vs {
 
             void main() {
                 mat4 mvp = ubo.proj * ubo.view * ubo.model;
-                gl_Position = mvp * vec4(position, 0.0, 1.0);
+                gl_Position = mvp * vec4(position, 1.0);
+                gl_Position.y = -gl_Position.y;
             }
         ",
     }
@@ -67,10 +72,24 @@ pub mod fs {
         src: r"
             #version 460
 
-            layout(location = 0) out vec4 f_color;
+            layout(location = 0) out vec4 out_color;
+
+            // from <https://stackoverflow.com/a/10625698>
+            float random(vec2 p) {
+                vec2 k1 = vec2(
+                    23.14069263277926, // e^pi
+                    2.665144142690225  // 2^sqrt(2)
+                );
+                return fract(cos(dot(p, k1)) * 12345.6789);
+            }
 
             void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                vec3 color = vec3(
+                    random(vec2(gl_PrimitiveID, 1.1)),
+                    random(vec2(gl_PrimitiveID, 2.2)),
+                    random(vec2(gl_PrimitiveID, 3.3))
+                );
+                out_color = vec4(color, 1.0);
             }
         ",
     }
@@ -115,16 +134,26 @@ pub fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<Re
                 load_op: Clear,
                 store_op: Store,
             },
+            depth_stencil: {
+                format: Format::D16_UNORM,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            },
         },
         pass: {
             color: [color],
-            depth_stencil: {},
+            depth_stencil: {depth_stencil},
         },
     )
     .unwrap()
 }
 
-pub fn get_framebuffers(images: &[Arc<Image>], render_pass: Arc<RenderPass>) -> Vec<Arc<Framebuffer>> {
+pub fn get_framebuffers(
+    images: &[Arc<Image>],
+    depth_buffer: &Arc<ImageView>,
+    render_pass: Arc<RenderPass>
+) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
         .map(|image| {
@@ -132,7 +161,7 @@ pub fn get_framebuffers(images: &[Arc<Image>], render_pass: Arc<RenderPass>) -> 
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments: vec![view, depth_buffer.clone()],
                     ..Default::default()
                 },
             )
@@ -151,7 +180,7 @@ pub fn get_pipeline(
     let vs = vs.entry_point("main").unwrap();
     let fs = fs.entry_point("main").unwrap();
 
-    let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
+    let vertex_input_state = VertexPos::per_vertex().definition(&vs).unwrap();
 
     let stages = [
         PipelineShaderStageCreateInfo::new(vs),
@@ -181,6 +210,10 @@ pub fn get_pipeline(
             }),
             rasterization_state: Some(RasterizationState::default()),
             multisample_state: Some(MultisampleState::default()),
+            depth_stencil_state: Some(DepthStencilState {
+                depth: Some(DepthState::simple()),
+                ..Default::default()
+            }),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState::default(),
@@ -198,8 +231,8 @@ pub fn get_command_buffers(
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &[Arc<Framebuffer>],
     descriptor_sets: &[Arc<DescriptorSet>],
-    vertex_buffer: &Subbuffer<[MyVertex]>,
-    index_buffer: &Subbuffer<[u16]>,
+    vertex_buffer: &Subbuffer<[VertexPos]>,
+    index_buffer: &Subbuffer<[u32]>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -215,7 +248,10 @@ pub fn get_command_buffers(
             builder
                 .begin_render_pass(
                     RenderPassBeginInfo {
-                        clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                        clear_values: vec![
+                            Some([0.0, 0.0, 1.0, 1.0].into()),  // color
+                            Some(ClearValue::Depth(1.0)),       // depth
+                        ],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                     },
                     SubpassBeginInfo {
@@ -245,4 +281,47 @@ pub fn get_command_buffers(
             builder.build().unwrap()
         })
         .collect()
+}
+
+pub fn create_depth_buffer(
+    memory_allocator: Arc<dyn MemoryAllocator>,
+    extent: [u32; 3],
+) -> Arc<ImageView> {
+    ImageView::new_default(
+        Image::new(
+            memory_allocator,
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: Format::D16_UNORM,
+                extent,
+                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+pub fn load_model<V: MyVertexTrait>(model: NormalizedObj) -> (Vec<V>, Vec<u32>, (Vec3, Vec3)) {
+    let mut min = Vec3::splat(f32::MAX);
+    let mut max = Vec3::splat(f32::MIN);
+    for vertex in &model.vertices {
+        for (i, &coord) in vertex.pos_coords.iter().enumerate() {
+            min[i] = min[i].min(coord);
+            max[i] = max[i].max(coord);
+        }
+    }
+    let vertices = model.vertices.iter().map(|vertex| {
+        let tex_coords = if model.has_tex_coords {
+            vertex.tex_coords
+        } else {
+            [vertex.pos_coords[2], vertex.pos_coords[1]]
+        };
+        let norm = [0.; 3]; // TODO implement getting norm
+        V::new(vertex.pos_coords, norm, tex_coords)
+    }).collect();
+
+    (vertices, model.indices, (min, max))
 }
