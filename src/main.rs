@@ -1,4 +1,6 @@
 mod app;
+mod art;
+mod fs;
 mod model;
 mod vulkan;
 

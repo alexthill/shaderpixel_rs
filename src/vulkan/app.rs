@@ -1,11 +1,19 @@
-use crate::model::obj::NormalizedObj;
-use super::debug::*;
-use super::helpers::*;
-use super::vertex::VertexPos;
+use crate::{
+    art::ArtObject,
+    model::obj::NormalizedObj,
+};
+use super::{
+    debug::*,
+    helpers::*,
+    pipeline::MyPipeline,
+    shader::HotShader,
+    vertex::MyVertexTrait,
+};
 
 use std::sync::Arc;
 
 use glam::Mat4;
+use shaderc::ShaderKind;
 use vulkano::{
     buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -21,8 +29,7 @@ use vulkano::{
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::graphics::viewport::Viewport,
     pipeline::Pipeline,
-    render_pass::RenderPass,
-    shader::ShaderModule,
+    render_pass::{Framebuffer, RenderPass},
     swapchain::{
         self,
         PresentFuture, PresentMode, Surface, Swapchain, SwapchainAcquireFuture,
@@ -51,17 +58,15 @@ pub struct App {
     memory_allocator: Arc<StandardMemoryAllocator>,
     depth_format: Format,
     render_pass: Arc<RenderPass>,
+    framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     descriptor_sets: Vec<Arc<DescriptorSet>>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
-    vertex_buffer: Subbuffer<[VertexPos]>,
-    index_buffer: Subbuffer<[u32]>,
     fences: Vec<Option<Arc<FenceSignalFuture<ComplexFenceFutureType>>>>,
     previous_fence_i: usize,
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
+    pipelines: Vec<MyPipeline>,
 
     // If this falls out of scope then there will be no more debug events.
     // Put it at the end so that it gets dropped last.
@@ -74,6 +79,7 @@ impl App {
     pub fn new(
         window: Arc<Window>,
         model: NormalizedObj,
+        art_objs: Vec<ArtObject>,
     ) -> Self {
         log::debug!("creating vulkan app");
 
@@ -178,35 +184,12 @@ impl App {
         );
         let framebuffers = get_framebuffers(&images, &depth_buffer, render_pass.clone());
 
-        let (vertices, indices, _) = load_model(model);
-
-        let vertex_buffer = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            vertices 
-        ).unwrap();
-
-        let index_buffer = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::INDEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
+        let (vertices, indices, _) = load_model(&model);
+        let (vertex_buffer, index_buffer) = model_to_buffers(
+            &vertices,
             indices,
-        ).unwrap();
+            memory_allocator.clone(),
+        );
 
         let vs = vs::load(device.clone()).expect("failed to create shader module");
         let fs = fs::load(device.clone()).expect("failed to create shader module");
@@ -217,13 +200,16 @@ impl App {
             depth_range: 0.0..=1.0,
         };
 
-        let pipeline = get_pipeline(
+        let pipeline = MyPipeline::new(
+            "main".to_owned(),
             device.clone(),
-            vs.clone(),
-            fs.clone(),
+            vertex_buffer,
+            index_buffer,
+            Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
+            Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
             render_pass.clone(),
             viewport.clone(),
-        );
+        ).unwrap();
 
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             device.clone(),
@@ -249,7 +235,7 @@ impl App {
             .map(|buffer| {
                 DescriptorSet::new(
                     descriptor_set_allocator.clone(),
-                    pipeline.layout().set_layouts()[0].clone(),
+                    pipeline.get_pipeline().unwrap().layout().set_layouts()[0].clone(),
                     [WriteDescriptorSet::buffer(0, buffer.clone())],
                     [],
                 )
@@ -257,6 +243,26 @@ impl App {
             })
             .collect::<Vec<_>>();
 
+        let mut pipelines = vec![pipeline];
+        for art_obj in art_objs {
+            let (vertices, indices, _) = load_model(&art_obj.model);
+            let (vertex_buffer, index_buffer) = model_to_buffers(
+                &vertices,
+                indices,
+                memory_allocator.clone(),
+            );
+            let pipeline = MyPipeline::new(
+                art_obj.name,
+                device.clone(),
+                vertex_buffer,
+                index_buffer,
+                art_obj.shader_vert,
+                art_obj.shader_frag,
+                render_pass.clone(),
+                viewport.clone(),
+            ).unwrap();
+            pipelines.push(pipeline);
+        }
 
         let command_buffer_allocator =
             Arc::new(StandardCommandBufferAllocator::new(device.clone(), Default::default()));
@@ -264,11 +270,9 @@ impl App {
         let command_buffers = get_command_buffers(
             &command_buffer_allocator,
             &queue,
-            &pipeline,
+            &pipelines,
             &framebuffers,
             &descriptor_sets,
-            &vertex_buffer,
-            &index_buffer,
         );
 
         let frames_in_flight = images.len();
@@ -277,24 +281,22 @@ impl App {
         Self {
             view_matrix: Mat4::IDENTITY,
             instance,
-            debug,
             device,
             queue,
             swapchain,
             memory_allocator,
             depth_format,
             render_pass,
+            framebuffers,
             viewport,
             descriptor_sets,
             command_buffer_allocator,
             command_buffers,
             uniform_buffers,
-            vertex_buffer,
-            index_buffer,
             fences,
             previous_fence_i: 0,
-            vs,
-            fs,
+            pipelines,
+            debug,
         }
     }
 
@@ -312,32 +314,52 @@ impl App {
         );
 
         self.swapchain = new_swapchain;
-        let new_framebuffers = get_framebuffers(
+        self.framebuffers = get_framebuffers(
             &new_images,
             &depth_buffer,
             self.render_pass.clone(),
         );
 
         self.viewport.extent = dimensions.into();
-        let new_pipeline = get_pipeline(
-            self.device.clone(),
-            self.vs.clone(),
-            self.fs.clone(),
-            self.render_pass.clone(),
-            self.viewport.clone(),
-        );
+        for pipeline in self.pipelines.iter_mut() {
+            pipeline.update_pipeline(
+                self.device.clone(),
+                self.render_pass.clone(),
+                self.viewport.clone(),
+            ).unwrap();
+        }
         self.command_buffers = get_command_buffers(
             &self.command_buffer_allocator,
             &self.queue,
-            &new_pipeline,
-            &new_framebuffers,
+            &self.pipelines,
+            &self.framebuffers,
             &self.descriptor_sets,
-            &self.vertex_buffer,
-            &self.index_buffer,
         );
     }
 
     pub fn draw(&mut self, time: f32) -> bool {
+        let mut pipeline_changed = false;
+        for pipeline in self.pipelines[1..].iter_mut() {
+            if pipeline.get_pipeline().is_none() {
+                pipeline.update_pipeline(
+                    self.device.clone(),
+                    self.render_pass.clone(),
+                    self.viewport.clone(),
+                ).unwrap();
+                pipeline_changed |= pipeline.get_pipeline().is_some();
+            }
+        }
+        if pipeline_changed {
+            unsafe { self.device.wait_idle().unwrap(); }
+            self.command_buffers = get_command_buffers(
+                &self.command_buffer_allocator,
+                &self.queue,
+                &self.pipelines,
+                &self.framebuffers,
+                &self.descriptor_sets,
+            );
+        }
+
         let (image_i, suboptimal, acquire_future) =
             match swapchain::acquire_next_image(self.swapchain.clone(), None)
                 .map_err(Validated::unwrap)
@@ -412,4 +434,43 @@ impl App {
             proj: proj.to_cols_array_2d(),
         };
     }
+}
+
+pub fn model_to_buffers<V>(
+    vertices: &[V],
+    indices: &[u32],
+    memory_allocator: Arc<StandardMemoryAllocator>,
+) -> (Subbuffer<[V]>, Subbuffer<[u32]>)
+where
+    V: MyVertexTrait + Copy,
+{
+    let vertex_buffer = Buffer::from_iter(
+        memory_allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::VERTEX_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ..Default::default()
+        },
+        vertices.iter().copied(),
+    ).unwrap();
+
+    let index_buffer = Buffer::from_iter(
+        memory_allocator.clone(),
+        BufferCreateInfo {
+            usage: BufferUsage::INDEX_BUFFER,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            ..Default::default()
+        },
+        indices.iter().copied(),
+    ).unwrap();
+
+    (vertex_buffer, index_buffer)
 }

@@ -1,0 +1,8 @@
+# square in the x-y-plane centered on the origin and ranging from -1 to 1
+
+v -1 -1  0
+v -1  1  0
+v  1  1  0
+v  1 -1  0
+
+f 1 2 3 4

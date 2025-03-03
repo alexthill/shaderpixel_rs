@@ -1,5 +1,10 @@
-use crate::model::env_generator::default_env;
-use crate::vulkan::VkApp;
+use crate::art::ArtObject;
+use crate::fs;
+use crate::model::{
+    env_generator::default_env,
+    obj::NormalizedObj,
+};
+use crate::vulkan::{HotShader, VkApp};
 
 use std::{
     sync::Arc,
@@ -7,7 +12,7 @@ use std::{
 };
 
 use anyhow::Context;
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec3, Vec4};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -74,7 +79,7 @@ pub struct App {
 }
 
 impl App {
-    fn init(&mut self, event_loop: &ActiveEventLoop) -> Result<(), anyhow::Error> {
+    fn init(&mut self, event_loop: &ActiveEventLoop) -> anyhow::Result<()> {
         let window_attrs = Window::default_attributes()
             .with_title(TITLE)
             .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT));
@@ -82,7 +87,24 @@ impl App {
         let window = Arc::new(window);
 
         let model = default_env().normalize()?;
-        let vk_app = VkApp::new(Arc::clone(&window), model);
+        let art_objects = {
+            let model_square = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/square.obj")?)?);
+            let shader_2d = Arc::new(HotShader::new_vert("assets/shaders/art2d.vert"));
+            vec![
+                ArtObject {
+                    name: "mandelbrot".to_owned(),
+                    model: model_square,
+                    matrix: Mat4::from_scale_rotation_translation(
+                        Vec3::splat(0.5),
+                        Quat::from_rotation_y(90_f32.to_radians()),
+                        [5.99, 1.5, -1.5].into(),
+                    ),
+                    shader_vert: shader_2d.clone(),
+                    shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbrot.frag")),
+                },
+            ]
+        };
+        let vk_app = VkApp::new(Arc::clone(&window), model, art_objects);
 
         self.app = Some((window, vk_app));
         self.swapchain_dirty = true;

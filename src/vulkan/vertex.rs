@@ -3,11 +3,11 @@ use vulkano::{
     pipeline::graphics::vertex_input::Vertex,
 };
 
-pub trait MyVertexTrait {
+pub trait MyVertexTrait: BufferContents {
     fn new(pos: [f32; 3], norm: [f32; 3], coords: [f32; 2]) -> Self;
 }
 
-#[derive(BufferContents, Vertex)]
+#[derive(Debug, Default, Clone, Copy, BufferContents, Vertex)]
 #[repr(C)]
 pub struct VertexPos {
     #[format(R32G32B32_SFLOAT)]
