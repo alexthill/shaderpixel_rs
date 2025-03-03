@@ -14,6 +14,7 @@ use vulkano::{
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
+    format::Format,
     image::ImageUsage,
     instance::debug::DebugUtilsMessenger,
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
@@ -48,6 +49,7 @@ pub struct App {
     queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
     memory_allocator: Arc<StandardMemoryAllocator>,
+    depth_format: Format,
     render_pass: Arc<RenderPass>,
     viewport: Viewport,
     descriptor_sets: Vec<Arc<DescriptorSet>>,
@@ -165,8 +167,15 @@ impl App {
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
-        let render_pass = get_render_pass(device.clone(), swapchain.clone());
-        let depth_buffer = create_depth_buffer(memory_allocator.clone(), images[0].extent());
+        let depth_format = find_depth_format(&physical_device)
+            .expect("failed to find a supported depth format");
+        log::debug!("selected depth format: {depth_format:?}");
+        let render_pass = get_render_pass(device.clone(), swapchain.clone(), depth_format);
+        let depth_buffer = create_depth_buffer(
+            memory_allocator.clone(),
+            images[0].extent(),
+            depth_format,
+        );
         let framebuffers = get_framebuffers(&images, &depth_buffer, render_pass.clone());
 
         let (vertices, indices, _) = load_model(model);
@@ -273,6 +282,7 @@ impl App {
             queue,
             swapchain,
             memory_allocator,
+            depth_format,
             render_pass,
             viewport,
             descriptor_sets,
@@ -295,7 +305,11 @@ impl App {
                 ..self.swapchain.create_info()
             })
             .expect("failed to recreate swapchain");
-        let depth_buffer = create_depth_buffer(self.memory_allocator.clone(), new_images[0].extent());
+        let depth_buffer = create_depth_buffer(
+            self.memory_allocator.clone(),
+            new_images[0].extent(),
+            self.depth_format,
+        );
 
         self.swapchain = new_swapchain;
         let new_framebuffers = get_framebuffers(

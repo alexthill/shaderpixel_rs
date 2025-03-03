@@ -20,7 +20,7 @@ use vulkano::{
     image::{
         view::ImageView,
         sys::ImageCreateInfo,
-        Image, ImageType, ImageUsage,
+        Image, ImageFormatInfo, ImageTiling, ImageType, ImageUsage,
     },
     instance::Instance,
     memory::allocator::{AllocationCreateInfo, MemoryAllocator},
@@ -30,7 +30,7 @@ use vulkano::{
             depth_stencil::{DepthState, DepthStencilState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
-            rasterization::RasterizationState,
+            rasterization::{CullMode, RasterizationState},
             vertex_input::{Vertex, VertexDefinition},
             viewport::{Viewport, ViewportState},
             GraphicsPipelineCreateInfo,
@@ -124,7 +124,11 @@ pub fn select_physical_device(
         .expect("no device available")
 }
 
-pub fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
+pub fn get_render_pass(
+    device: Arc<Device>,
+    swapchain: Arc<Swapchain>,
+    depth_format: Format,
+) -> Arc<RenderPass> {
     vulkano::single_pass_renderpass!(
         device,
         attachments: {
@@ -135,7 +139,7 @@ pub fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<Re
                 store_op: Store,
             },
             depth_stencil: {
-                format: Format::D16_UNORM,
+                format: depth_format,
                 samples: 1,
                 load_op: Clear,
                 store_op: DontCare,
@@ -208,7 +212,10 @@ pub fn get_pipeline(
                 viewports: [viewport].into_iter().collect(),
                 ..Default::default()
             }),
-            rasterization_state: Some(RasterizationState::default()),
+            rasterization_state: Some(RasterizationState {
+                cull_mode: CullMode::Back,
+                ..Default::default()
+            }),
             multisample_state: Some(MultisampleState::default()),
             depth_stencil_state: Some(DepthStencilState {
                 depth: Some(DepthState::simple()),
@@ -249,7 +256,7 @@ pub fn get_command_buffers(
                 .begin_render_pass(
                     RenderPassBeginInfo {
                         clear_values: vec![
-                            Some([0.0, 0.0, 1.0, 1.0].into()),  // color
+                            Some([0.0, 0.0, 0.8, 1.0].into()),  // color
                             Some(ClearValue::Depth(1.0)),       // depth
                         ],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
@@ -283,16 +290,35 @@ pub fn get_command_buffers(
         .collect()
 }
 
+pub fn find_depth_format(device: &PhysicalDevice) -> Option<Format> {
+    let candidates = [
+        Format::D32_SFLOAT,
+        Format::D32_SFLOAT_S8_UINT,
+        Format::D24_UNORM_S8_UINT,
+        Format::D16_UNORM,
+    ];
+    candidates.into_iter().find(|&format| {
+        device.image_format_properties(ImageFormatInfo {
+            format,
+            image_type: ImageType::Dim2d,
+            tiling: ImageTiling::Optimal,
+            usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT,
+            ..Default::default()
+        }).ok().is_some()
+    })
+}
+
 pub fn create_depth_buffer(
     memory_allocator: Arc<dyn MemoryAllocator>,
     extent: [u32; 3],
+    format: Format,
 ) -> Arc<ImageView> {
     ImageView::new_default(
         Image::new(
             memory_allocator,
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
-                format: Format::D16_UNORM,
+                format,
                 extent,
                 usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
                 ..Default::default()
