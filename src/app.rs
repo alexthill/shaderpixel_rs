@@ -93,7 +93,7 @@ impl App {
             vec![
                 ArtObject {
                     name: "mandelbrot".to_owned(),
-                    model: model_square,
+                    model: model_square.clone(),
                     matrix: Mat4::from_scale_rotation_translation(
                         Vec3::splat(0.5),
                         Quat::from_rotation_y(90_f32.to_radians()),
@@ -101,6 +101,17 @@ impl App {
                     ),
                     shader_vert: shader_2d.clone(),
                     shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbrot.frag")),
+                },
+                ArtObject {
+                    name: "sdf_cat".to_owned(),
+                    model: model_square.clone(),
+                    matrix: Mat4::from_scale_rotation_translation(
+                        Vec3::splat(0.5),
+                        Quat::from_rotation_y(90_f32.to_radians()),
+                        [5.99, 1.5, -4.5].into(),
+                    ),
+                    shader_vert: shader_2d.clone(),
+                    shader_frag: Arc::new(HotShader::new_frag("assets/shaders/sdf_cat.frag")),
                 },
             ]
         };

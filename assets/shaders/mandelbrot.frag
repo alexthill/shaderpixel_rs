@@ -5,12 +5,18 @@
 
 layout(location = 0) in vec3 fragPos;
 
+layout(set = 0, binding = 1) uniform UniformBufferObject {
+    float time;
+} ubo;
+
 layout(location = 0) out vec4 outColor;
 
 const float BAILOUT = 256.0;
 const uint MAX_ITER = 100;
 
 void main() {
+	float time = ubo.time; // force ubo to not be optimized away
+
     vec2 pos = fragPos.xy * 1.67;
     pos.x = -pos.x - 0.67;
     vec2 z = pos;

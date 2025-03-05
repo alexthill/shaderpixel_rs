@@ -5,7 +5,7 @@ use crate::{
 use super::{
     debug::*,
     helpers::*,
-    pipeline::MyPipeline,
+    pipeline::{DescriptorData, MyPipeline},
     shader::HotShader,
     vertex::MyVertexTrait,
 };
@@ -60,13 +60,12 @@ pub struct App {
     render_pass: Arc<RenderPass>,
     framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
-    descriptor_sets: Vec<Arc<DescriptorSet>>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
     fences: Vec<Option<Arc<FenceSignalFuture<ComplexFenceFutureType>>>>,
     previous_fence_i: usize,
     pipelines: Vec<MyPipeline>,
+    uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
 
     // If this falls out of scope then there will be no more debug events.
     // Put it at the end so that it gets dropped last.
@@ -200,8 +199,9 @@ impl App {
             depth_range: 0.0..=1.0,
         };
 
-        let pipeline = MyPipeline::new(
+        let pipeline_main = MyPipeline::new(
             "main".to_owned(),
+            Mat4::IDENTITY,
             device.clone(),
             vertex_buffer,
             index_buffer,
@@ -226,24 +226,7 @@ impl App {
             },
         );
 
-        let uniform_buffers = (0..images.len()).map(|_| {
-            uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
-        }).collect::<Vec<_>>();
-
-        let descriptor_sets = uniform_buffers
-            .iter()
-            .map(|buffer| {
-                DescriptorSet::new(
-                    descriptor_set_allocator.clone(),
-                    pipeline.get_pipeline().unwrap().layout().set_layouts()[0].clone(),
-                    [WriteDescriptorSet::buffer(0, buffer.clone())],
-                    [],
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        let mut pipelines = vec![pipeline];
+        let mut pipelines = vec![pipeline_main];
         for art_obj in art_objs {
             let (vertices, indices, _) = load_model(&art_obj.model);
             let (vertex_buffer, index_buffer) = model_to_buffers(
@@ -253,6 +236,7 @@ impl App {
             );
             let pipeline = MyPipeline::new(
                 art_obj.name,
+                art_obj.matrix,
                 device.clone(),
                 vertex_buffer,
                 index_buffer,
@@ -263,6 +247,35 @@ impl App {
             ).unwrap();
             pipelines.push(pipeline);
         }
+        let layout = pipelines[0].get_pipeline().unwrap().layout().set_layouts()[0].clone();
+        let uniform_buffers_frag = (0..images.len()).map(|_| {
+            uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
+        }).collect::<Vec<_>>();
+        for pipeline in pipelines.iter_mut() {
+            let uniform_buffers_vert = (0..images.len()).map(|_| {
+                uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
+            }).collect::<Vec<_>>();
+            let descriptor_sets = uniform_buffers_vert
+                .iter()
+                .zip(uniform_buffers_frag.iter())
+                .map(|(buffer_vert, buffer_frag)| {
+                    DescriptorSet::new(
+                        descriptor_set_allocator.clone(),
+                        layout.clone(),
+                        [
+                            WriteDescriptorSet::buffer(0, buffer_vert.clone()),
+                            WriteDescriptorSet::buffer(1, buffer_frag.clone()),
+                        ],
+                        [],
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>();
+            pipeline.set_descriptor_data(DescriptorData {
+                descriptor_sets,
+                uniform_buffers_vert,
+            });
+        }
 
         let command_buffer_allocator =
             Arc::new(StandardCommandBufferAllocator::new(device.clone(), Default::default()));
@@ -272,7 +285,6 @@ impl App {
             &queue,
             &pipelines,
             &framebuffers,
-            &descriptor_sets,
         );
 
         let frames_in_flight = images.len();
@@ -289,13 +301,12 @@ impl App {
             render_pass,
             framebuffers,
             viewport,
-            descriptor_sets,
             command_buffer_allocator,
             command_buffers,
-            uniform_buffers,
             fences,
             previous_fence_i: 0,
             pipelines,
+            uniform_buffers_frag,
             debug,
         }
     }
@@ -333,7 +344,6 @@ impl App {
             &self.queue,
             &self.pipelines,
             &self.framebuffers,
-            &self.descriptor_sets,
         );
     }
 
@@ -356,7 +366,6 @@ impl App {
                 &self.queue,
                 &self.pipelines,
                 &self.framebuffers,
-                &self.descriptor_sets,
             );
         }
 
@@ -390,7 +399,7 @@ impl App {
             Some(fence) => fence.boxed(),
         };
 
-        self.update_uniform_buffer(image_i, time);
+        self.update_uniform_buffer(image_i as _, time);
 
         let future = previous_future
             .join(acquire_future)
@@ -418,7 +427,7 @@ impl App {
         swapchain_dirty
     }
 
-    fn update_uniform_buffer(&mut self, image_index: u32, _time: f32) {
+    fn update_uniform_buffer(&self, image_index: usize, time: f32) {
         let aspect_ratio = self.swapchain.image_extent()[0] as f32
             / self.swapchain.image_extent()[1] as f32;
         let proj = Mat4::perspective_rh(
@@ -427,12 +436,18 @@ impl App {
             0.01,
             200.0,
         );
-
-        *self.uniform_buffers[image_index as usize].write().unwrap() = vs::UniformBufferObject {
-            model: Mat4::IDENTITY.to_cols_array_2d(),
-            view: self.view_matrix.to_cols_array_2d(),
-            proj: proj.to_cols_array_2d(),
-        };
+        for pipeline in self.pipelines.iter() {
+            if let Err(err) = pipeline.update_uniform_buffer(image_index, self.view_matrix, proj) {
+                log::error!("failed to update uniforms: {err:?}");
+            }
+        }
+        let write = self.uniform_buffers_frag[image_index].write();
+        match write {
+            Ok(mut write) => *write = fs::UniformBufferObject {
+                time,
+            },
+            Err(err) => log::error!("failed to update uniforms: {err:?}"),
+        }
     }
 }
 

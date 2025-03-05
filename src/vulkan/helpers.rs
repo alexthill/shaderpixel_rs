@@ -13,7 +13,6 @@ use vulkano::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
         SubpassBeginInfo, SubpassContents,
     },
-    descriptor_set::DescriptorSet,
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
         Device, DeviceExtensions, Queue, QueueFlags
@@ -64,6 +63,10 @@ pub mod fs {
 
             layout(location = 0) out vec4 out_color;
 
+            layout(set = 0, binding = 1) uniform UniformBufferObject {
+                float time;
+            } ubo;
+
             // from <https://stackoverflow.com/a/10625698>
             float random(vec2 p) {
                 vec2 k1 = vec2(
@@ -74,11 +77,14 @@ pub mod fs {
             }
 
             void main() {
+                // this is needed to prevent ubo from getting optimized away
+                float time = ubo.time;
+
                 vec3 color = vec3(
                     random(vec2(gl_PrimitiveID, 1.1)),
                     random(vec2(gl_PrimitiveID, 2.2)),
                     random(vec2(gl_PrimitiveID, 3.3))
-                );
+                ) + vec3(sin(time) * 0.1);
                 out_color = vec4(color, 1.0);
             }
         ",
@@ -169,7 +175,6 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipelines: &[MyPipeline],
     framebuffers: &[Arc<Framebuffer>],
-    descriptor_sets: &[Arc<DescriptorSet>],
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -210,7 +215,7 @@ pub fn get_command_buffers(
                         PipelineBindPoint::Graphics,
                         pipeline.layout().clone(),
                         0,
-                        descriptor_sets[i].clone(),
+                        my_pipeline.get_descriptor_sets().unwrap()[i].clone(),
                     )
                     .unwrap()
                     .bind_vertex_buffers(0, vertex_buffer.clone())

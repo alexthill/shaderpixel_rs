@@ -1,13 +1,16 @@
 use super::{
+    helpers::vs,
     shader::HotShader,
     vertex::VertexPos,
 };
 
 use std::sync::Arc;
 
+use glam::Mat4;
 use vulkano::{
     buffer::Subbuffer,
     device::Device,
+    descriptor_set::DescriptorSet,
     pipeline::{
         graphics::{
             color_blend::{ColorBlendAttachmentState, ColorBlendState},
@@ -26,9 +29,17 @@ use vulkano::{
     shader::ShaderModule,
 };
 
+pub struct DescriptorData {
+    pub descriptor_sets: Vec<Arc<DescriptorSet>>,
+    pub uniform_buffers_vert: Vec<Subbuffer<vs::UniformBufferObject>>,
+    //pub uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
+}
+
 pub struct MyPipeline {
     name: String,
+    model_matrix: Mat4,
     pipeline: Option<Arc<GraphicsPipeline>>,
+    descriptor_data: Option<DescriptorData>,
     vertex_buffer: Subbuffer<[VertexPos]>,
     index_buffer: Subbuffer<[u32]>,
     vs: Arc<HotShader>,
@@ -38,6 +49,7 @@ pub struct MyPipeline {
 impl MyPipeline {
     pub fn new(
         name: String,
+        model_matrix: Mat4,
         device: Arc<Device>,
         vertex_buffer: Subbuffer<[VertexPos]>,
         index_buffer: Subbuffer<[u32]>,
@@ -69,7 +81,9 @@ impl MyPipeline {
 
         Ok(Self {
             name,
+            model_matrix,
             pipeline,
+            descriptor_data: None,
             vertex_buffer,
             index_buffer,
             vs,
@@ -81,12 +95,37 @@ impl MyPipeline {
         self.pipeline.as_ref()
     }
 
+    pub fn get_descriptor_sets(&self) -> Option<&[Arc<DescriptorSet>]> {
+        self.descriptor_data.as_ref().map(|data| &*data.descriptor_sets)
+    }
+
+    pub fn set_descriptor_data(&mut self, data: DescriptorData) {
+        self.descriptor_data = Some(data);
+    }
+
     pub fn get_vertex_buffer(&self) -> &Subbuffer<[VertexPos]> {
         &self.vertex_buffer
     }
 
     pub fn get_index_buffer(&self) -> &Subbuffer<[u32]> {
         &self.index_buffer
+    }
+
+    pub fn update_uniform_buffer(
+        &self,
+        idx: usize,
+        view: Mat4,
+        proj: Mat4,
+    ) -> anyhow::Result<()> {
+        let Some(data) = self.descriptor_data.as_ref() else {
+            return Err(anyhow::anyhow!("called update_uniforms on pipeline without data"));
+        };
+        *data.uniform_buffers_vert[idx].write()? = vs::UniformBufferObject {
+            model: self.model_matrix.to_cols_array_2d(),
+            view: view.to_cols_array_2d(),
+            proj: proj.to_cols_array_2d(),
+        };
+        Ok(())
     }
 
     pub fn update_pipeline(
@@ -99,6 +138,7 @@ impl MyPipeline {
         let fs_module = self.fs.get_module()?;
 
         self.pipeline = if let (Some(vs), Some(fs)) = (vs_module, fs_module) {
+            log::debug!("updating pipeline {}", self.name);
             Some(Self::create_pipeline(
                 device,
                 vs.clone(),
