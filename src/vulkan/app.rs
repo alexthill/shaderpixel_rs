@@ -6,7 +6,7 @@ use super::{
     debug::*,
     helpers::*,
     pipeline::{DescriptorData, MyPipeline},
-    shader::HotShader,
+    shader::{watch_shaders, HotShader},
     vertex::MyVertexTrait,
 };
 
@@ -45,7 +45,7 @@ use vulkano::{
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-type ComplexFenceFutureType = PresentFuture<CommandBufferExecFuture<JoinFuture<Box< dyn GpuFuture>, SwapchainAcquireFuture>>>;
+type ComplexFenceFutureType = PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>;
 
 pub struct App {
     pub view_matrix: Mat4,
@@ -227,6 +227,10 @@ impl App {
         );
 
         let mut pipelines = vec![pipeline_main];
+        let shader_iter = art_objs.iter().flat_map(|art_obj| {
+            [art_obj.shader_vert.clone(), art_obj.shader_frag.clone()]
+        });
+        watch_shaders(shader_iter);
         for art_obj in art_objs {
             let (vertices, indices, _) = load_model(&art_obj.model);
             let (vertex_buffer, index_buffer) = model_to_buffers(
@@ -252,10 +256,10 @@ impl App {
             uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
         }).collect::<Vec<_>>();
         for pipeline in pipelines.iter_mut() {
-            let uniform_buffers_vert = (0..images.len()).map(|_| {
+            let uniform_buffers= (0..images.len()).map(|_| {
                 uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
             }).collect::<Vec<_>>();
-            let descriptor_sets = uniform_buffers_vert
+            let descriptor_sets = uniform_buffers
                 .iter()
                 .zip(uniform_buffers_frag.iter())
                 .map(|(buffer_vert, buffer_frag)| {
@@ -273,7 +277,7 @@ impl App {
                 .collect::<Vec<_>>();
             pipeline.set_descriptor_data(DescriptorData {
                 descriptor_sets,
-                uniform_buffers_vert,
+                uniform_buffers,
             });
         }
 
@@ -350,7 +354,9 @@ impl App {
     pub fn draw(&mut self, time: f32) -> bool {
         let mut pipeline_changed = false;
         for pipeline in self.pipelines[1..].iter_mut() {
-            if pipeline.get_pipeline().is_none() {
+            if pipeline.has_changed() {
+                pipeline_changed = true;
+            } else if pipeline.get_pipeline().is_none() {
                 pipeline.update_pipeline(
                     self.device.clone(),
                     self.render_pass.clone(),
@@ -361,6 +367,9 @@ impl App {
         }
         if pipeline_changed {
             unsafe { self.device.wait_idle().unwrap(); }
+            for pipeline in self.pipelines[1..].iter_mut() {
+                pipeline.reload_shaders(false);
+            }
             self.command_buffers = get_command_buffers(
                 &self.command_buffer_allocator,
                 &self.queue,
@@ -392,7 +401,6 @@ impl App {
             None => {
                 let mut now = sync::now(self.device.clone());
                 now.cleanup_finished();
-
                 now.boxed()
             }
             // Use the existing FenceSignalFuture

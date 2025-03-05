@@ -1,14 +1,20 @@
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
+    sync::{mpsc, Arc, LazyLock, RwLock},
+    thread,
+    time::{Duration, Instant},
+};
+
+use notify_debouncer_full::{new_debouncer, notify};
 use shaderc::{Compiler, CompileOptions, ShaderKind};
 use vulkano::{
     device::Device,
     shader::{ShaderModule, ShaderModuleCreateInfo},
 };
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, LazyLock, RwLock};
-use std::thread;
-use std::time::Instant;
+const DEBOUNCE_TIME: Duration = Duration::from_millis(500);
 
 static COMPILE_THREAD: LazyLock<mpsc::Sender<Arc<HotShader>>> = LazyLock::new(|| {
     let (tx, rx) = mpsc::channel::<Arc<HotShader>>();
@@ -24,6 +30,61 @@ static COMPILE_THREAD: LazyLock<mpsc::Sender<Arc<HotShader>>> = LazyLock::new(||
     });
     tx
 });
+
+pub fn watch_shaders<S: IntoIterator<Item = Arc<HotShader>>>(shaders: S) {
+    let shaders_by_path = shaders.into_iter()
+        .filter_map(|shader| {
+            shader.path.as_ref()
+                .and_then(|path| fs::canonicalize(path).ok())
+                .map(|path| (path, shader))
+        })
+        .collect::<HashMap<_, _>>();
+
+    thread::spawn(move || {
+        let (tx, rx) = mpsc::channel();
+        let mut debouncer = match new_debouncer(DEBOUNCE_TIME, None, tx) {
+            Ok(debouncer) => debouncer,
+            Err(err) => {
+                log::error!("failed to create file watcher: {err}");
+                return;
+            }
+        };
+        let dirs_to_watch = shaders_by_path.keys()
+            .filter_map(|path| path.parent())
+            .collect::<HashSet<_>>();
+        for path in dirs_to_watch {
+            if let Err(err) = debouncer.watch(path, notify::RecursiveMode::Recursive) {
+                log::error!("failed to watch {}: {err}", path.display());
+            } else {
+                log::debug!("watching file {}", path.display());
+            }
+        }
+        for res in rx {
+            match res {
+                Ok(events) => {
+                    for event in events {
+                        use notify::EventKind::*;
+                        use notify::event::{AccessKind::*, AccessMode::*, ModifyKind::*};
+
+                        let (Access(Close(Write)) | Modify(Data(_))) = event.kind else { continue };
+                        for shader in event.paths.iter()
+                            .filter_map(|path| shaders_by_path.get(path))
+                        {
+                            let Some(path) = &shader.path else { continue };
+                            log::info!("shader changed {}", path.display());
+                            let Ok(mut inner) = shader.inner.write() else {
+                                log::error!("Lock poisoned");
+                                continue;
+                            };
+                            inner.code_has_changed = true;
+                        }
+                    }
+                }
+                Err(e) => log::info!("watch error: {:?}", e),
+            }
+        }
+    });
+}
 
 pub struct HotShader {
     path: Option<PathBuf>,
@@ -72,6 +133,16 @@ impl HotShader {
         Ok(inner.module.clone())
     }
 
+    pub fn has_changed(&self) -> bool {
+        match self.inner.read() {
+            Ok(inner) => inner.code_has_changed,
+            Err(_) => {
+                log::error!("Lock poisoned");
+                false
+            }
+        }
+    }
+
     pub fn reload(self: &Arc<Self>, forced: bool) -> bool {
         let path = self.path.clone().expect("shader must have a path set to load it");
         let mut inner = self.inner.write().unwrap();
@@ -84,6 +155,7 @@ impl HotShader {
 
         // reset code_has_changed here so we don't loop if an error happens
         inner.code_has_changed = false;
+        inner.module = None;
 
         let sender = COMPILE_THREAD.clone();
         match sender.send(self.clone()) {

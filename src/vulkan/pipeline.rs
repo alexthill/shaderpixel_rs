@@ -31,8 +31,7 @@ use vulkano::{
 
 pub struct DescriptorData {
     pub descriptor_sets: Vec<Arc<DescriptorSet>>,
-    pub uniform_buffers_vert: Vec<Subbuffer<vs::UniformBufferObject>>,
-    //pub uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
+    pub uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
 }
 
 pub struct MyPipeline {
@@ -47,6 +46,7 @@ pub struct MyPipeline {
 }
 
 impl MyPipeline {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         model_matrix: Mat4,
@@ -111,6 +111,19 @@ impl MyPipeline {
         &self.index_buffer
     }
 
+    pub fn has_changed(&self) -> bool {
+        self.vs.has_changed() || self.fs.has_changed()
+    }
+
+    pub fn reload_shaders(&mut self, forced: bool) -> bool {
+        if self.vs.reload(forced) | self.fs.reload(forced) {
+            self.pipeline = None;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn update_uniform_buffer(
         &self,
         idx: usize,
@@ -120,7 +133,7 @@ impl MyPipeline {
         let Some(data) = self.descriptor_data.as_ref() else {
             return Err(anyhow::anyhow!("called update_uniforms on pipeline without data"));
         };
-        *data.uniform_buffers_vert[idx].write()? = vs::UniformBufferObject {
+        *data.uniform_buffers[idx].write()? = vs::UniformBufferObject {
             model: self.model_matrix.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             proj: proj.to_cols_array_2d(),
