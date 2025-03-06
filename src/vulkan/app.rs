@@ -5,13 +5,14 @@ use crate::{
 use super::{
     debug::*,
     helpers::*,
-    pipeline::{DescriptorData, MyPipeline},
+    pipeline::MyPipeline,
     shader::{watch_shaders, HotShader},
     vertex::MyVertexTrait,
 };
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use glam::Mat4;
 use shaderc::ShaderKind;
 use vulkano::{
@@ -20,7 +21,6 @@ use vulkano::{
     command_buffer::allocator::StandardCommandBufferAllocator,
     command_buffer::{CommandBufferExecFuture, PrimaryAutoCommandBuffer},
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    descriptor_set::{DescriptorSet, WriteDescriptorSet},
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     format::Format,
     image::ImageUsage,
@@ -28,7 +28,6 @@ use vulkano::{
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::graphics::viewport::Viewport,
-    pipeline::Pipeline,
     render_pass::{Framebuffer, RenderPass},
     swapchain::{
         self,
@@ -56,6 +55,7 @@ pub struct App {
     queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
     memory_allocator: Arc<StandardMemoryAllocator>,
+    descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     depth_format: Format,
     render_pass: Arc<RenderPass>,
     framebuffers: Vec<Arc<Framebuffer>>,
@@ -199,18 +199,6 @@ impl App {
             depth_range: 0.0..=1.0,
         };
 
-        let pipeline_main = MyPipeline::new(
-            "main".to_owned(),
-            Mat4::IDENTITY,
-            device.clone(),
-            vertex_buffer,
-            index_buffer,
-            Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
-            Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
-            render_pass.clone(),
-            viewport.clone(),
-        ).unwrap();
-
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             device.clone(),
             Default::default(),
@@ -226,11 +214,33 @@ impl App {
             },
         );
 
-        let mut pipelines = vec![pipeline_main];
+        let uniform_buffers_frag = (0..images.len()).map(|_| {
+            uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
+        }).collect::<Vec<_>>();
+        let uniform_buffers = (0..images.len()).map(|_| {
+            uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
+        }).collect::<Vec<_>>();
+        let pipeline_main = MyPipeline::new(
+            "main".to_owned(),
+            Mat4::IDENTITY,
+            device.clone(),
+            vertex_buffer,
+            index_buffer,
+            uniform_buffers,
+            Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
+            Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
+            render_pass.clone(),
+            viewport.clone(),
+            &uniform_buffers_frag,
+            descriptor_set_allocator.clone(),
+        ).unwrap();
+
         let shader_iter = art_objs.iter().flat_map(|art_obj| {
             [art_obj.shader_vert.clone(), art_obj.shader_frag.clone()]
         });
         watch_shaders(shader_iter);
+
+        let mut pipelines = vec![pipeline_main];
         for art_obj in art_objs {
             let (vertices, indices, _) = load_model(&art_obj.model);
             let (vertex_buffer, index_buffer) = model_to_buffers(
@@ -238,47 +248,24 @@ impl App {
                 indices,
                 memory_allocator.clone(),
             );
+            let uniform_buffers = (0..images.len()).map(|_| {
+                uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
+            }).collect::<Vec<_>>();
             let pipeline = MyPipeline::new(
                 art_obj.name,
                 art_obj.matrix,
                 device.clone(),
                 vertex_buffer,
                 index_buffer,
+                uniform_buffers,
                 art_obj.shader_vert,
                 art_obj.shader_frag,
                 render_pass.clone(),
                 viewport.clone(),
+                &uniform_buffers_frag,
+                descriptor_set_allocator.clone(),
             ).unwrap();
             pipelines.push(pipeline);
-        }
-        let layout = pipelines[0].get_pipeline().unwrap().layout().set_layouts()[0].clone();
-        let uniform_buffers_frag = (0..images.len()).map(|_| {
-            uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
-        }).collect::<Vec<_>>();
-        for pipeline in pipelines.iter_mut() {
-            let uniform_buffers= (0..images.len()).map(|_| {
-                uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
-            }).collect::<Vec<_>>();
-            let descriptor_sets = uniform_buffers
-                .iter()
-                .zip(uniform_buffers_frag.iter())
-                .map(|(buffer_vert, buffer_frag)| {
-                    DescriptorSet::new(
-                        descriptor_set_allocator.clone(),
-                        layout.clone(),
-                        [
-                            WriteDescriptorSet::buffer(0, buffer_vert.clone()),
-                            WriteDescriptorSet::buffer(1, buffer_frag.clone()),
-                        ],
-                        [],
-                    )
-                    .unwrap()
-                })
-                .collect::<Vec<_>>();
-            pipeline.set_descriptor_data(DescriptorData {
-                descriptor_sets,
-                uniform_buffers,
-            });
         }
 
         let command_buffer_allocator =
@@ -301,6 +288,7 @@ impl App {
             queue,
             swapchain,
             memory_allocator,
+            descriptor_set_allocator,
             depth_format,
             render_pass,
             framebuffers,
@@ -341,6 +329,8 @@ impl App {
                 self.device.clone(),
                 self.render_pass.clone(),
                 self.viewport.clone(),
+                &self.uniform_buffers_frag,
+                self.descriptor_set_allocator.clone(),
             ).unwrap();
         }
         self.command_buffers = get_command_buffers(
@@ -351,7 +341,7 @@ impl App {
         );
     }
 
-    pub fn draw(&mut self, time: f32) -> bool {
+    pub fn draw(&mut self, time: f32) -> anyhow::Result<bool> {
         let mut pipeline_changed = false;
         for pipeline in self.pipelines[1..].iter_mut() {
             if pipeline.has_changed() {
@@ -361,7 +351,9 @@ impl App {
                     self.device.clone(),
                     self.render_pass.clone(),
                     self.viewport.clone(),
-                ).unwrap();
+                    &self.uniform_buffers_frag,
+                    self.descriptor_set_allocator.clone(),
+                ).context("failed to update pipeline")?;
                 pipeline_changed |= pipeline.get_pipeline().is_some();
             }
         }
@@ -384,7 +376,7 @@ impl App {
             {
                 Ok(r) => r,
                 Err(VulkanError::OutOfDate) => {
-                    return true;
+                    return Ok(true);
                 }
                 Err(e) => panic!("failed to acquire next image: {e}"),
             };
@@ -432,7 +424,7 @@ impl App {
         };
 
         self.previous_fence_i = image_i as _;
-        swapchain_dirty
+        Ok(swapchain_dirty)
     }
 
     fn update_uniform_buffer(&self, image_index: usize, time: f32) {

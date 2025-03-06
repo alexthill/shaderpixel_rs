@@ -1,19 +1,25 @@
 use super::{
-    helpers::vs,
+    helpers::{fs, vs},
     shader::HotShader,
     vertex::VertexPos,
 };
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use glam::Mat4;
 use vulkano::{
     buffer::Subbuffer,
     device::Device,
-    descriptor_set::DescriptorSet,
+    descriptor_set::{
+        allocator::StandardDescriptorSetAllocator,
+        DescriptorSet, WriteDescriptorSet,
+    },
     pipeline::{
         graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState},
+            color_blend::{
+                AttachmentBlend, BlendFactor, BlendOp, ColorBlendAttachmentState, ColorBlendState
+            },
             depth_stencil::{DepthState, DepthStencilState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
@@ -23,24 +29,20 @@ use vulkano::{
             GraphicsPipelineCreateInfo,
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
-        GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+        GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
     },
     render_pass::{RenderPass, Subpass},
     shader::ShaderModule,
 };
 
-pub struct DescriptorData {
-    pub descriptor_sets: Vec<Arc<DescriptorSet>>,
-    pub uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
-}
-
 pub struct MyPipeline {
     name: String,
     model_matrix: Mat4,
     pipeline: Option<Arc<GraphicsPipeline>>,
-    descriptor_data: Option<DescriptorData>,
+    descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
     vertex_buffer: Subbuffer<[VertexPos]>,
     index_buffer: Subbuffer<[u32]>,
+    uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
     vs: Arc<HotShader>,
     fs: Arc<HotShader>,
 }
@@ -53,42 +55,38 @@ impl MyPipeline {
         device: Arc<Device>,
         vertex_buffer: Subbuffer<[VertexPos]>,
         index_buffer: Subbuffer<[u32]>,
+        uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
         vs: Arc<HotShader>,
         fs: Arc<HotShader>,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
+        uniform_buffers_frag: &[Subbuffer<fs::UniformBufferObject>],
+        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<Self> {
         log::debug!("creating pipeline {name}");
 
         vs.set_device(device.clone());
         fs.set_device(device.clone());
-        let vs_module = vs.get_module()?;
-        let fs_module = fs.get_module()?;
 
-        let pipeline = if let (Some(vs), Some(fs)) = (vs_module, fs_module) {
-            Some(Self::create_pipeline(
-                device,
-                vs.clone(),
-                fs.clone(),
-                render_pass,
-                viewport,
-            )?)
-        } else {
-            vs.reload(false);
-            fs.reload(false);
-            None
-        };
-
-        Ok(Self {
+        let mut pipeline = Self {
             name,
             model_matrix,
-            pipeline,
-            descriptor_data: None,
+            pipeline: None,
+            descriptor_sets: None,
             vertex_buffer,
             index_buffer,
+            uniform_buffers,
             vs,
             fs,
-        })
+        };
+        pipeline.update_pipeline(
+            device,
+            render_pass,
+            viewport,
+            uniform_buffers_frag,
+            descriptor_set_allocator,
+        )?;
+        Ok(pipeline)
     }
 
     pub fn get_pipeline(&self) -> Option<&Arc<GraphicsPipeline>> {
@@ -96,11 +94,7 @@ impl MyPipeline {
     }
 
     pub fn get_descriptor_sets(&self) -> Option<&[Arc<DescriptorSet>]> {
-        self.descriptor_data.as_ref().map(|data| &*data.descriptor_sets)
-    }
-
-    pub fn set_descriptor_data(&mut self, data: DescriptorData) {
-        self.descriptor_data = Some(data);
+        self.descriptor_sets.as_ref().map(|set| &**set)
     }
 
     pub fn get_vertex_buffer(&self) -> &Subbuffer<[VertexPos]> {
@@ -130,10 +124,7 @@ impl MyPipeline {
         view: Mat4,
         proj: Mat4,
     ) -> anyhow::Result<()> {
-        let Some(data) = self.descriptor_data.as_ref() else {
-            return Err(anyhow::anyhow!("called update_uniforms on pipeline without data"));
-        };
-        *data.uniform_buffers[idx].write()? = vs::UniformBufferObject {
+        *self.uniform_buffers[idx].write()? = vs::UniformBufferObject {
             model: self.model_matrix.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             proj: proj.to_cols_array_2d(),
@@ -146,25 +137,63 @@ impl MyPipeline {
         device: Arc<Device>,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
+        uniform_buffers_frag: &[Subbuffer<fs::UniformBufferObject>],
+        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
         let vs_module = self.vs.get_module()?;
         let fs_module = self.fs.get_module()?;
 
-        self.pipeline = if let (Some(vs), Some(fs)) = (vs_module, fs_module) {
+        if let (Some(vs), Some(fs)) = (vs_module, fs_module) {
             log::debug!("updating pipeline {}", self.name);
-            Some(Self::create_pipeline(
+            let pipeline = Self::create_pipeline(
                 device,
                 vs.clone(),
                 fs.clone(),
                 render_pass,
                 viewport
-            )?)
+            )?;
+            self.pipeline = Some(pipeline);
+            self.update_descriptor_sets(uniform_buffers_frag, descriptor_set_allocator)
+                .context("failed to update descriptor_sets")?;
         } else {
             self.vs.reload(false);
             self.fs.reload(false);
-            None
-        };
+        }
 
+        Ok(())
+    }
+
+    fn update_descriptor_sets(
+        &mut self,
+        uniform_buffers_frag: &[Subbuffer<fs::UniformBufferObject>],
+        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    ) -> anyhow::Result<()> {
+        debug_assert_eq!(self.uniform_buffers.len(), uniform_buffers_frag.len());
+        let Some(pipeline) = self.pipeline.as_ref() else {
+            return Ok(());
+        };
+        let layout = &pipeline.layout().set_layouts()[0];
+        let mut descriptor_sets = Vec::with_capacity(self.uniform_buffers.len());
+        for i in 0..self.uniform_buffers.len() {
+            let write_sets = [
+                WriteDescriptorSet::buffer(0, self.uniform_buffers[i].clone()),
+                WriteDescriptorSet::buffer(1, uniform_buffers_frag[i].clone()),
+            ];
+            let write_sets = write_sets
+                .into_iter()
+                .filter(|set| {
+                    pipeline.descriptor_binding_requirements()
+                        .contains_key(&(0, set.binding()))
+                })
+                .collect::<Vec<_>>();
+            descriptor_sets.push(DescriptorSet::new(
+                descriptor_set_allocator.clone(),
+                layout.clone(),
+                write_sets,
+                [],
+            )?);
+        }
+        self.descriptor_sets = Some(descriptor_sets);
         Ok(())
     }
 
@@ -217,7 +246,17 @@ impl MyPipeline {
                 }),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(
                     subpass.num_color_attachments(),
-                    ColorBlendAttachmentState::default(),
+                    ColorBlendAttachmentState {
+                        blend: Some(AttachmentBlend {
+                            src_color_blend_factor: BlendFactor::SrcAlpha,
+                            dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
+                            color_blend_op: BlendOp::Add,
+                            src_alpha_blend_factor: BlendFactor::One,
+                            dst_alpha_blend_factor: BlendFactor::Zero,
+                            alpha_blend_op: BlendOp::Add,
+                        }),
+                        ..Default::default()
+                    },
                 )),
                 subpass: Some(subpass.into()),
                 ..GraphicsPipelineCreateInfo::layout(layout)

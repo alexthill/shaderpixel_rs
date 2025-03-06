@@ -89,7 +89,9 @@ impl App {
         let model = default_env().normalize()?;
         let art_objects = {
             let model_square = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/square.obj")?)?);
+            let model_cube = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/cube_inside.obj")?)?);
             let shader_2d = Arc::new(HotShader::new_vert("assets/shaders/art2d.vert"));
+            let shader_3d = Arc::new(HotShader::new_vert("assets/shaders/art3d.vert"));
             vec![
                 ArtObject {
                     name: "mandelbrot".to_owned(),
@@ -112,6 +114,17 @@ impl App {
                     ),
                     shader_vert: shader_2d.clone(),
                     shader_frag: Arc::new(HotShader::new_frag("assets/shaders/sdf_cat.frag")),
+                },
+                ArtObject {
+                    name: "mandelbox".to_owned(),
+                    model: model_cube.clone(),
+                    matrix: Mat4::from_scale_rotation_translation(
+                        Vec3::splat(0.5),
+                        Quat::from_rotation_y(0_f32.to_radians()),
+                        [-2.5, 1.51, -0.5].into(),
+                    ),
+                    shader_vert: shader_3d.clone(),
+                    shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbox.frag")),
                 },
             ]
         };
@@ -274,7 +287,14 @@ impl ApplicationHandler for App {
 
 
         // draw and remember if swapchain is dirty
-        self.swapchain_dirty = vk_app.draw(self.time);
+        self.swapchain_dirty = match vk_app.draw(self.time) {
+            Ok(swapchain_dirty) => swapchain_dirty,
+            Err(err) => {
+                log::error!("error while drawing, exiting: {err:?}");
+                event_loop.exit();
+                false
+            }
+        };
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
