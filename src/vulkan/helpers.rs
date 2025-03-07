@@ -21,7 +21,7 @@ use vulkano::{
     image::{
         view::ImageView,
         sys::ImageCreateInfo,
-        Image, ImageFormatInfo, ImageTiling, ImageType, ImageUsage,
+        Image, ImageFormatInfo, ImageTiling, ImageType, ImageUsage, SampleCount,
     },
     instance::Instance,
     memory::allocator::{AllocationCreateInfo, MemoryAllocator},
@@ -120,31 +120,49 @@ pub fn select_physical_device(
         .expect("no device available")
 }
 
+pub fn select_msaa_sample_count(device: &PhysicalDevice) -> SampleCount {
+    let color_sample_counts = device.properties().framebuffer_color_sample_counts;
+    let depth_sample_counts = device.properties().framebuffer_depth_sample_counts;
+    let sample_counts = color_sample_counts.intersection(depth_sample_counts);
+    [SampleCount::Sample8, SampleCount::Sample4, SampleCount::Sample2]
+        .into_iter()
+        .find(|sample_count| sample_counts.contains_enum(*sample_count))
+        .unwrap_or(SampleCount::Sample1)
+}
+
 pub fn get_render_pass(
     device: Arc<Device>,
     swapchain: Arc<Swapchain>,
     depth_format: Format,
+    msaa_sample_count: SampleCount,
 ) -> Arc<RenderPass> {
     vulkano::ordered_passes_renderpass!(
         device,
         attachments: {
-            color: {
-                format: swapchain.image_format(), // set the format the same as the swapchain
-                samples: 1,
+            intermediary: {
+                format: swapchain.image_format(),
+                samples: msaa_sample_count as u32,
                 load_op: Clear,
                 store_op: Store,
             },
             depth_stencil: {
                 format: depth_format,
-                samples: 1,
+                samples: msaa_sample_count as u32,
                 load_op: Clear,
                 store_op: DontCare,
+            },
+            color: {
+                format: swapchain.image_format(),
+                samples: 1,
+                load_op: DontCare,
+                store_op: Store,
             },
         },
         passes: [
             // Scene render pass
             {
-                color: [color],
+                color: [intermediary],
+                color_resolve: [color],
                 depth_stencil: {depth_stencil},
                 input: [],
             },
@@ -161,9 +179,44 @@ pub fn get_render_pass(
 
 pub fn get_framebuffers(
     images: &[Arc<Image>],
-    depth_buffer: &Arc<ImageView>,
-    render_pass: Arc<RenderPass>
+    depth_format: Format,
+    render_pass: Arc<RenderPass>,
+    memory_allocator: Arc<dyn MemoryAllocator>,
+    msaa_sample_count: SampleCount,
 ) -> Vec<Arc<Framebuffer>> {
+    let intermediary = ImageView::new_default(
+        Image::new(
+            memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: images[0].format(),
+                extent: images[0].extent(),
+                usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                samples: msaa_sample_count,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let depth_buffer = ImageView::new_default(
+        Image::new(
+            memory_allocator,
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: depth_format,
+                extent: images[0].extent(),
+                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                samples: msaa_sample_count,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
     images
         .iter()
         .map(|image| {
@@ -171,7 +224,7 @@ pub fn get_framebuffers(
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view, depth_buffer.clone()],
+                    attachments: vec![intermediary.clone(), depth_buffer.clone(), view],
                     ..Default::default()
                 },
             )
@@ -196,8 +249,9 @@ pub fn get_primary_command_buffer(
         .begin_render_pass(
             RenderPassBeginInfo {
                 clear_values: vec![
-                    Some([0.0, 0.0, 0.8, 1.0].into()),  // color
+                    Some([0.0, 0.0, 0.8, 1.0].into()),  // intermediary color
                     Some(ClearValue::Depth(1.0)),       // depth
+                    None,                               // final color
                 ],
                 ..RenderPassBeginInfo::framebuffer(framebuffer)
             },
@@ -230,7 +284,7 @@ pub fn get_command_buffers(
     render_pass: Arc<RenderPass>,
 ) -> Vec<Arc<SecondaryAutoCommandBuffer>> {
     let subpass = Subpass::from(render_pass, 0).unwrap();
-    (0..count).into_iter().map(|i| {
+    (0..count).map(|i| {
         let mut builder = AutoCommandBufferBuilder::secondary(
             command_buffer_allocator.clone(),
             queue.queue_family_index(),
@@ -284,28 +338,6 @@ pub fn find_depth_format(device: &PhysicalDevice) -> Option<Format> {
             ..Default::default()
         }).ok().is_some()
     })
-}
-
-pub fn create_depth_buffer(
-    memory_allocator: Arc<dyn MemoryAllocator>,
-    extent: [u32; 3],
-    format: Format,
-) -> Arc<ImageView> {
-    ImageView::new_default(
-        Image::new(
-            memory_allocator,
-            ImageCreateInfo {
-                image_type: ImageType::Dim2d,
-                format,
-                extent,
-                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
-                ..Default::default()
-            },
-            AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap()
 }
 
 pub fn load_model<V: MyVertexTrait>(model: &NormalizedObj) -> (Vec<V>, &[u32], (Vec3, Vec3)) {

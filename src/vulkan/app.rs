@@ -24,7 +24,7 @@ use vulkano::{
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     format::Format,
-    image::ImageUsage,
+    image::{ImageUsage, SampleCount},
     instance::debug::DebugUtilsMessenger,
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
@@ -52,6 +52,7 @@ pub struct App {
     device: Arc<Device>,
     queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
+    msaa_sample_count: SampleCount,
     memory_allocator: Arc<StandardMemoryAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     depth_format: Format,
@@ -162,7 +163,7 @@ impl App {
                     min_image_count,
                     image_format,
                     image_extent: dimensions.into(),
-                    image_usage: ImageUsage::COLOR_ATTACHMENT,
+                    image_usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_DST,
                     composite_alpha,
                     present_mode: PresentMode::Fifo,
                     ..Default::default()
@@ -174,16 +175,25 @@ impl App {
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
+        let msaa_sample_count = select_msaa_sample_count(&physical_device);
+        log::debug!("selected msaa sample count: {msaa_sample_count:?}");
         let depth_format = find_depth_format(&physical_device)
             .expect("failed to find a supported depth format");
         log::debug!("selected depth format: {depth_format:?}");
-        let render_pass = get_render_pass(device.clone(), swapchain.clone(), depth_format);
-        let depth_buffer = create_depth_buffer(
-            memory_allocator.clone(),
-            images[0].extent(),
+
+        let render_pass = get_render_pass(
+            device.clone(),
+            swapchain.clone(),
             depth_format,
+            msaa_sample_count,
         );
-        let framebuffers = get_framebuffers(&images, &depth_buffer, render_pass.clone());
+        let framebuffers = get_framebuffers(
+            &images,
+            depth_format,
+            render_pass.clone(),
+            memory_allocator.clone(),
+            msaa_sample_count,
+        );
 
         let (vertices, indices, _) = load_model(&model);
         let (vertex_buffer, index_buffer) = model_to_buffers(
@@ -292,6 +302,7 @@ impl App {
             device,
             queue,
             swapchain,
+            msaa_sample_count,
             memory_allocator,
             descriptor_set_allocator,
             depth_format,
@@ -323,17 +334,14 @@ impl App {
                 ..self.swapchain.create_info()
             })
             .expect("failed to recreate swapchain");
-        let depth_buffer = create_depth_buffer(
-            self.memory_allocator.clone(),
-            new_images[0].extent(),
-            self.depth_format,
-        );
 
         self.swapchain = new_swapchain;
         self.framebuffers = get_framebuffers(
             &new_images,
-            &depth_buffer,
+            self.depth_format,
             self.render_pass.clone(),
+            self.memory_allocator.clone(),
+            self.msaa_sample_count,
         );
 
         self.viewport.extent = dimensions.into();

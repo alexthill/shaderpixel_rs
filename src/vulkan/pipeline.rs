@@ -242,7 +242,10 @@ impl MyPipeline {
                     cull_mode: CullMode::Back,
                     ..Default::default()
                 }),
-                multisample_state: Some(MultisampleState::default()),
+                multisample_state: Some(MultisampleState {
+                    rasterization_samples: render_pass.attachments()[0].samples,
+                    ..Default::default()
+                }),
                 depth_stencil_state: Some(DepthStencilState {
                     depth: Some(DepthState::simple()),
                     ..Default::default()
