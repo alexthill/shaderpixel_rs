@@ -1,10 +1,13 @@
-use crate::art::ArtObject;
-use crate::fs;
-use crate::model::{
-    env_generator::default_env,
-    obj::NormalizedObj,
+use crate::{
+    art::ArtObject,
+    fs,
+    gui::State,
+    model::{
+        env_generator::default_env,
+        obj::NormalizedObj,
+    },
+    vulkan::{HotShader, VkApp},
 };
-use crate::vulkan::{HotShader, VkApp};
 
 use std::{
     sync::Arc,
@@ -12,6 +15,7 @@ use std::{
 };
 
 use anyhow::Context;
+use egui_winit_vulkano::{Gui, GuiConfig};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use winit::{
     application::ApplicationHandler,
@@ -46,7 +50,7 @@ struct Camera{
 }
 
 #[derive(Default)]
-pub struct KeyStates {
+struct KeyStates {
     forward: bool,
     backward: bool,
     left: bool,
@@ -58,9 +62,9 @@ pub struct KeyStates {
 
 #[derive(Default)]
 pub struct App {
-    app: Option<(Arc<Window>, VkApp)>,
+    app: Option<(Arc<Window>, VkApp, Gui)>,
     swapchain_dirty: bool,
-
+    state: State,
     /// Time passed since app start in fractional seconds.
     time: f32,
     /// Information about frame timing.
@@ -130,10 +134,19 @@ impl App {
             ]
         };
         let vk_app = VkApp::new(Arc::clone(&window), model, art_objects);
+        let gui = Gui::new_with_subpass(
+            event_loop,
+            vk_app.get_swapchain().surface().clone(),
+            vk_app.get_queue().clone(),
+            vk_app.gui_pass(),
+            vk_app.get_swapchain().image_format(),
+            GuiConfig::default(),
+        );
 
-        self.app = Some((window, vk_app));
+        self.app = Some((window, vk_app, gui));
         self.swapchain_dirty = true;
         self.camera.position = START_POSITION;
+
         Ok(())
     }
 }
@@ -147,6 +160,11 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        let (window, _, gui) = self.app.as_mut().unwrap();
+        if gui.update(&event) {
+            return;
+        }
+
         match event {
             WindowEvent::Resized { .. } => {
                 self.swapchain_dirty = true;
@@ -183,7 +201,6 @@ impl ApplicationHandler for App {
                     KeyCode::ShiftLeft => self.key_states.down = pressed,
                     KeyCode::ControlLeft if pressed => self.camera.fly_mode = !self.camera.fly_mode,
                     KeyCode::F1 if pressed => {
-                        let (window, _) = self.app.as_mut().unwrap();
                         if self.is_fullscreen {
                             window.set_fullscreen(None);
                         } else {
@@ -191,6 +208,7 @@ impl ApplicationHandler for App {
                         }
                         self.is_fullscreen = !self.is_fullscreen;
                     }
+                    KeyCode::F2 if pressed => self.state.toggle_open(),
                     _ => {}
                 }
                 match (logical_key.as_ref(), pressed) {
@@ -231,7 +249,8 @@ impl ApplicationHandler for App {
             return;
         }
 
-        let (window, vk_app) = self.app.as_mut().unwrap();
+        let (window, vk_app, gui) = self.app.as_mut().unwrap();
+        self.state.render(gui);
 
         // update fps info
         let now = Instant::now();
@@ -297,7 +316,8 @@ impl ApplicationHandler for App {
 
 
         // draw and remember if swapchain is dirty
-        self.swapchain_dirty = match vk_app.draw(self.time) {
+        //self.swapchain_dirty = match vk_app.draw(self.time) {
+        self.swapchain_dirty = match vk_app.draw(self.time, Some(gui)) {
             Ok(swapchain_dirty) => swapchain_dirty,
             Err(err) => {
                 log::error!("error while drawing, exiting: {err:?}");
@@ -308,8 +328,6 @@ impl ApplicationHandler for App {
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
-        if let Some((_, _vk_app)) = self.app.as_ref() {
-            //vk_app.wait_gpu_idle();
-        }
+        // nothing
     }
 }

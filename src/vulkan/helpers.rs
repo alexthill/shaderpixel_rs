@@ -10,8 +10,8 @@ use glam::Vec3;
 use vulkano::{
     command_buffer::{
         allocator::StandardCommandBufferAllocator,
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
-        SubpassBeginInfo, SubpassContents,
+        AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo,
+        SecondaryAutoCommandBuffer, SubpassBeginInfo, SubpassContents,
     },
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
@@ -28,7 +28,7 @@ use vulkano::{
     pipeline::{
         Pipeline, PipelineBindPoint,
     },
-    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
+    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::{Surface, Swapchain},
 };
 
@@ -125,7 +125,7 @@ pub fn get_render_pass(
     swapchain: Arc<Swapchain>,
     depth_format: Format,
 ) -> Arc<RenderPass> {
-    vulkano::single_pass_renderpass!(
+    vulkano::ordered_passes_renderpass!(
         device,
         attachments: {
             color: {
@@ -141,10 +141,20 @@ pub fn get_render_pass(
                 store_op: DontCare,
             },
         },
-        pass: {
-            color: [color],
-            depth_stencil: {depth_stencil},
-        },
+        passes: [
+            // Scene render pass
+            {
+                color: [color],
+                depth_stencil: {depth_stencil},
+                input: [],
+            },
+            // Gui render pass
+            {
+                color: [color],
+                depth_stencil: {},
+                input: [],
+            },
+        ],
     )
     .unwrap()
 }
@@ -170,68 +180,92 @@ pub fn get_framebuffers(
         .collect::<Vec<_>>()
 }
 
+pub fn get_primary_command_buffer(
+    command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
+    queue: &Arc<Queue>,
+    framebuffer: Arc<Framebuffer>,
+    subpasses: impl IntoIterator<Item = Arc<SecondaryAutoCommandBuffer>>,
+) -> anyhow::Result<Arc<PrimaryAutoCommandBuffer>> {
+    let mut subpasses = subpasses.into_iter();
+    let mut builder = AutoCommandBufferBuilder::primary(
+        command_buffer_allocator.clone(),
+        queue.queue_family_index(),
+        CommandBufferUsage::OneTimeSubmit,
+    )?;
+    builder
+        .begin_render_pass(
+            RenderPassBeginInfo {
+                clear_values: vec![
+                    Some([0.0, 0.0, 0.8, 1.0].into()),  // color
+                    Some(ClearValue::Depth(1.0)),       // depth
+                ],
+                ..RenderPassBeginInfo::framebuffer(framebuffer)
+            },
+            SubpassBeginInfo {
+                contents: SubpassContents::SecondaryCommandBuffers,
+                ..Default::default()
+            },
+        )?;
+    builder.execute_commands(subpasses.next().expect("no subpasses"))?;
+    for subpass in subpasses {
+        builder
+            .next_subpass(
+                Default::default(),
+                SubpassBeginInfo {
+                    contents: SubpassContents::SecondaryCommandBuffers,
+                    ..Default::default()
+                }
+            )?
+            .execute_commands(subpass)?;
+    }
+    builder.end_render_pass(Default::default())?;
+    Ok(builder.build()?)
+}
+
 pub fn get_command_buffers(
+    count: usize,
     command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
     queue: &Arc<Queue>,
     pipelines: &[MyPipeline],
-    framebuffers: &[Arc<Framebuffer>],
-) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-    framebuffers
-        .iter()
-        .enumerate()
-        .map(|(i, framebuffer)| {
-            let mut builder = AutoCommandBufferBuilder::primary(
-                command_buffer_allocator.clone(),
-                queue.queue_family_index(),
-                CommandBufferUsage::MultipleSubmit,
-            )
-            .unwrap();
-
+    render_pass: Arc<RenderPass>,
+) -> Vec<Arc<SecondaryAutoCommandBuffer>> {
+    let subpass = Subpass::from(render_pass, 0).unwrap();
+    (0..count).into_iter().map(|i| {
+        let mut builder = AutoCommandBufferBuilder::secondary(
+            command_buffer_allocator.clone(),
+            queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+            CommandBufferInheritanceInfo {
+                render_pass: Some(subpass.clone().into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for my_pipeline in pipelines {
+            let Some(pipeline) = my_pipeline.get_pipeline() else {
+                continue;
+            };
+            let vertex_buffer = my_pipeline.get_vertex_buffer();
+            let index_buffer = my_pipeline.get_index_buffer();
             builder
-                .begin_render_pass(
-                    RenderPassBeginInfo {
-                        clear_values: vec![
-                            Some([0.0, 0.0, 0.8, 1.0].into()),  // color
-                            Some(ClearValue::Depth(1.0)),       // depth
-                        ],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                    },
-                    SubpassBeginInfo {
-                        contents: SubpassContents::Inline,
-                        ..Default::default()
-                    },
+                .bind_pipeline_graphics(pipeline.clone())
+                .unwrap()
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    0,
+                    my_pipeline.get_descriptor_sets().unwrap()[i].clone(),
                 )
+                .unwrap()
+                .bind_vertex_buffers(0, vertex_buffer.clone())
+                .unwrap()
+                .bind_index_buffer(index_buffer.clone())
                 .unwrap();
-            for my_pipeline in pipelines {
-                let Some(pipeline) = my_pipeline.get_pipeline() else {
-                    continue;
-                };
-                let vertex_buffer = my_pipeline.get_vertex_buffer();
-                let index_buffer = my_pipeline.get_index_buffer();
-                builder
-                    .bind_pipeline_graphics(pipeline.clone())
-                    .unwrap()
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Graphics,
-                        pipeline.layout().clone(),
-                        0,
-                        my_pipeline.get_descriptor_sets().unwrap()[i].clone(),
-                    )
-                    .unwrap()
-                    .bind_vertex_buffers(0, vertex_buffer.clone())
-                    .unwrap()
-                    .bind_index_buffer(index_buffer.clone())
-                    .unwrap();
-                unsafe { builder.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0) }
-                    .unwrap();
-            }
-            builder
-                .end_render_pass(Default::default())
+            unsafe { builder.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0) }
                 .unwrap();
-
-            builder.build().unwrap()
-        })
-        .collect()
+        }
+        builder.build().unwrap()
+    }).collect()
 }
 
 pub fn find_depth_format(device: &PhysicalDevice) -> Option<Format> {

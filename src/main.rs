@@ -1,6 +1,7 @@
 mod app;
 mod art;
 mod fs;
+mod gui;
 mod model;
 mod vulkan;
 

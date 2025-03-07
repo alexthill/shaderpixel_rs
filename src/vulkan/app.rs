@@ -13,13 +13,14 @@ use super::{
 use std::sync::Arc;
 
 use anyhow::Context;
+use egui_winit_vulkano::Gui;
 use glam::Mat4;
 use shaderc::ShaderKind;
 use vulkano::{
     buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::allocator::StandardCommandBufferAllocator,
-    command_buffer::PrimaryAutoCommandBuffer,
+    command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+    command_buffer::SecondaryAutoCommandBuffer,
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     format::Format,
@@ -28,7 +29,7 @@ use vulkano::{
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::graphics::viewport::Viewport,
-    render_pass::{Framebuffer, RenderPass},
+    render_pass::{Framebuffer, RenderPass, Subpass},
     swapchain::{
         self,
         PresentMode, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo,
@@ -58,7 +59,7 @@ pub struct App {
     framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    command_buffers: Vec<Arc<SecondaryAutoCommandBuffer>>,
     #[allow(clippy::type_complexity)]
     fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     previous_fence_i: usize,
@@ -169,6 +170,7 @@ impl App {
             )
             .unwrap()
         };
+        let frames_in_flight = images.len();
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
@@ -214,10 +216,10 @@ impl App {
             },
         );
 
-        let uniform_buffers_frag = (0..images.len()).map(|_| {
+        let uniform_buffers_frag = (0..frames_in_flight).map(|_| {
             uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
         }).collect::<Vec<_>>();
-        let uniform_buffers = (0..images.len()).map(|_| {
+        let uniform_buffers = (0..frames_in_flight).map(|_| {
             uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
         }).collect::<Vec<_>>();
         let pipeline_main = MyPipeline::new(
@@ -248,7 +250,7 @@ impl App {
                 indices,
                 memory_allocator.clone(),
             );
-            let uniform_buffers = (0..images.len()).map(|_| {
+            let uniform_buffers = (0..frames_in_flight).map(|_| {
                 uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
             }).collect::<Vec<_>>();
             let pipeline = MyPipeline::new(
@@ -268,18 +270,21 @@ impl App {
             pipelines.push(pipeline);
         }
 
-        let command_buffer_allocator =
-            Arc::new(StandardCommandBufferAllocator::new(device.clone(), Default::default()));
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(),
+            StandardCommandBufferAllocatorCreateInfo {
+                secondary_buffer_count: 32,
+                ..Default::default()
+            },
+        ));
 
         let command_buffers = get_command_buffers(
+            frames_in_flight,
             &command_buffer_allocator,
             &queue,
             &pipelines,
-            &framebuffers,
+            render_pass.clone(),
         );
-
-        let frames_in_flight = images.len();
-        let fences = vec![None; frames_in_flight];
 
         Self {
             view_matrix: Mat4::IDENTITY,
@@ -295,12 +300,20 @@ impl App {
             viewport,
             command_buffer_allocator,
             command_buffers,
-            fences,
+            fences: vec![None; frames_in_flight],
             previous_fence_i: 0,
             pipelines,
             uniform_buffers_frag,
             _debug: debug,
         }
+    }
+
+    pub fn get_queue(&self) -> &Arc<Queue> { &self.queue }
+
+    pub fn get_swapchain(&self) -> &Arc<Swapchain> { &self.swapchain }
+
+    pub fn gui_pass(&self) -> Subpass {
+        Subpass::from(self.render_pass.clone(), 1).unwrap()
     }
 
     pub fn recreate_swapchain(&mut self, dimensions: PhysicalSize<u32>) {
@@ -334,14 +347,15 @@ impl App {
             ).unwrap();
         }
         self.command_buffers = get_command_buffers(
+            self.fences.len(),
             &self.command_buffer_allocator,
             &self.queue,
             &self.pipelines,
-            &self.framebuffers,
+            self.render_pass.clone(),
         );
     }
 
-    pub fn draw(&mut self, time: f32) -> anyhow::Result<bool> {
+    pub fn draw(&mut self, time: f32, gui: Option<&mut Gui>) -> anyhow::Result<bool> {
         let mut pipeline_changed = false;
         for pipeline in self.pipelines[1..].iter_mut() {
             if pipeline.has_changed() {
@@ -363,10 +377,11 @@ impl App {
                 pipeline.reload_shaders(false);
             }
             self.command_buffers = get_command_buffers(
+                self.fences.len(),
                 &self.command_buffer_allocator,
                 &self.queue,
                 &self.pipelines,
-                &self.framebuffers,
+                self.render_pass.clone(),
             );
         }
 
@@ -384,7 +399,8 @@ impl App {
 
         let mut swapchain_dirty = suboptimal;
 
-        // wait for the fence related to this image to finish (normally this would be the oldest fence)
+        // wait for the fence related to this image to finish
+        // (normally this would be the oldest fence)
         if let Some(image_fence) = &self.fences[image_i] {
             image_fence.wait(None).unwrap();
         }
@@ -400,9 +416,21 @@ impl App {
 
         self.update_uniform_buffer(image_i, time);
 
+        let mut subpasses = vec![self.command_buffers[image_i].clone()];
+        if let Some(gui) = gui {
+            subpasses.push(gui.draw_on_subpass_image(self.swapchain.image_extent()));
+        }
+        let command_buffer = get_primary_command_buffer(
+            &self.command_buffer_allocator,
+            &self.queue,
+            self.framebuffers[image_i].clone(),
+            subpasses,
+        )?;
+
         let future = previous_future
             .join(acquire_future)
-            .then_execute(self.queue.clone(), self.command_buffers[image_i].clone())
+            //.then_execute(self.queue.clone(), self.command_buffers[image_i].clone())
+            .then_execute(self.queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
                 self.queue.clone(),
