@@ -94,7 +94,7 @@ impl MyPipeline {
     }
 
     pub fn get_descriptor_sets(&self) -> Option<&[Arc<DescriptorSet>]> {
-        self.descriptor_sets.as_ref().map(|set| &**set)
+        self.descriptor_sets.as_deref()
     }
 
     pub fn get_vertex_buffer(&self) -> &Subbuffer<[VertexPos]> {
@@ -174,6 +174,9 @@ impl MyPipeline {
         };
         let layout = &pipeline.layout().set_layouts()[0];
         let mut descriptor_sets = Vec::with_capacity(self.uniform_buffers.len());
+
+        // A for loop is nicer than zip iterators together.
+        #[allow(clippy::needless_range_loop)]
         for i in 0..self.uniform_buffers.len() {
             let write_sets = [
                 WriteDescriptorSet::buffer(0, self.uniform_buffers[i].clone()),

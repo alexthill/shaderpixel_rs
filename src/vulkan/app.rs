@@ -19,7 +19,7 @@ use vulkano::{
     buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::allocator::StandardCommandBufferAllocator,
-    command_buffer::{CommandBufferExecFuture, PrimaryAutoCommandBuffer},
+    command_buffer::PrimaryAutoCommandBuffer,
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     format::Format,
@@ -31,20 +31,17 @@ use vulkano::{
     render_pass::{Framebuffer, RenderPass},
     swapchain::{
         self,
-        PresentFuture, PresentMode, Surface, Swapchain, SwapchainAcquireFuture,
-        SwapchainCreateInfo, SwapchainPresentInfo,
+        PresentMode, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo,
     },
     sync::{
         self,
-        future::{FenceSignalFuture, JoinFuture},
+        future::FenceSignalFuture,
         GpuFuture,
     },
     Validated, VulkanError,
 };
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-
-type ComplexFenceFutureType = PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>;
 
 pub struct App {
     pub view_matrix: Mat4,
@@ -62,15 +59,15 @@ pub struct App {
     viewport: Viewport,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    fences: Vec<Option<Arc<FenceSignalFuture<ComplexFenceFutureType>>>>,
+    #[allow(clippy::type_complexity)]
+    fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     previous_fence_i: usize,
     pipelines: Vec<MyPipeline>,
     uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
 
     // If this falls out of scope then there will be no more debug events.
     // Put it at the end so that it gets dropped last.
-    #[allow(dead_code)]
-    debug: Option<DebugUtilsMessenger>,
+    _debug: Option<DebugUtilsMessenger>,
 
 }
 
@@ -282,7 +279,7 @@ impl App {
         );
 
         let frames_in_flight = images.len();
-        let fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
+        let fences = vec![None; frames_in_flight];
 
         Self {
             view_matrix: Mat4::IDENTITY,
@@ -302,7 +299,7 @@ impl App {
             previous_fence_i: 0,
             pipelines,
             uniform_buffers_frag,
-            debug,
+            _debug: debug,
         }
     }
 
@@ -383,38 +380,41 @@ impl App {
                 }
                 Err(e) => panic!("failed to acquire next image: {e}"),
             };
+        let image_i = image_i as usize;
 
         let mut swapchain_dirty = suboptimal;
 
         // wait for the fence related to this image to finish (normally this would be the oldest fence)
-        if let Some(image_fence) = &self.fences[image_i as usize] {
+        if let Some(image_fence) = &self.fences[image_i] {
             image_fence.wait(None).unwrap();
         }
 
         let previous_future = match self.fences[self.previous_fence_i].clone() {
-            // Create a NowFuture
             None => {
                 let mut now = sync::now(self.device.clone());
                 now.cleanup_finished();
                 now.boxed()
             }
-            // Use the existing FenceSignalFuture
             Some(fence) => fence.boxed(),
         };
 
-        self.update_uniform_buffer(image_i as _, time);
+        self.update_uniform_buffer(image_i, time);
 
         let future = previous_future
             .join(acquire_future)
-            .then_execute(self.queue.clone(), self.command_buffers[image_i as usize].clone())
+            .then_execute(self.queue.clone(), self.command_buffers[image_i].clone())
             .unwrap()
             .then_swapchain_present(
                 self.queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_i),
+                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_i as u32),
             )
+            .boxed()
             .then_signal_fence_and_flush();
 
-        self.fences[image_i as usize] = match future.map_err(Validated::unwrap) {
+        self.fences[image_i] = match future.map_err(Validated::unwrap) {
+            // We need to call .boxed() on the future at some point to get a dyn GpuFuture.
+            // To do this it need to be wrapped in Arc, even if it is not send/sync.
+            #[allow(clippy::arc_with_non_send_sync)]
             Ok(value) => Some(Arc::new(value)),
             Err(VulkanError::OutOfDate) => {
                 swapchain_dirty = true;
@@ -426,7 +426,7 @@ impl App {
             }
         };
 
-        self.previous_fence_i = image_i as _;
+        self.previous_fence_i = image_i;
         Ok(swapchain_dirty)
     }
 
