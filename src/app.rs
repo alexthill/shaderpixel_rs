@@ -19,7 +19,7 @@ use winit::{
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
-    window::{Window, WindowId},
+    window::{Fullscreen, Window, WindowId},
 };
 
 const WIDTH: u32 = 800;
@@ -41,8 +41,7 @@ struct Camera{
     angle_pitch: f32,
     /// Camera position.
     position: Vec3,
-    /// When in fly mode move into the direction the camera is looking.
-    /// Else move on the plane.
+    /// When in fly mode move into the direction the camera is looking, else move on the plane.
     fly_mode: bool,
 }
 
@@ -76,6 +75,8 @@ pub struct App {
     cursor_position: Option<[i32; 2]>,
     /// Movement delta of cursor since last frame.
     cursor_delta: [i32; 2],
+    /// Whether the application is in fullscreen or not.
+    is_fullscreen: bool,
 }
 
 impl App {
@@ -181,6 +182,15 @@ impl ApplicationHandler for App {
                     KeyCode::Space => self.key_states.up = pressed,
                     KeyCode::ShiftLeft => self.key_states.down = pressed,
                     KeyCode::ControlLeft if pressed => self.camera.fly_mode = !self.camera.fly_mode,
+                    KeyCode::F1 if pressed => {
+                        let (window, _) = self.app.as_mut().unwrap();
+                        if self.is_fullscreen {
+                            window.set_fullscreen(None);
+                        } else {
+                            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                        }
+                        self.is_fullscreen = !self.is_fullscreen;
+                    }
                     _ => {}
                 }
                 match (logical_key.as_ref(), pressed) {

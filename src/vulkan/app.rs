@@ -153,12 +153,15 @@ impl App {
                 .surface_formats(&surface, Default::default())
                 .unwrap()[0]
                 .0;
+            let min_image_count = 3
+                .min(caps.max_image_count.unwrap_or(u32::MAX))
+                .max(caps.min_image_count);
 
             Swapchain::new(
                 device.clone(),
                 surface,
                 SwapchainCreateInfo {
-                    min_image_count: caps.min_image_count,
+                    min_image_count,
                     image_format,
                     image_extent: dimensions.into(),
                     image_usage: ImageUsage::COLOR_ATTACHMENT,
