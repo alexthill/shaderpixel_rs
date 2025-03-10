@@ -2,8 +2,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use egui::{
-    epaint::Shadow,
-    Align2, Color32, CornerRadius, Frame, Id, Margin, Window, Ui, Vec2,
+    Align2, Color32, CornerRadius, Frame, Id, Theme, Ui, Vec2, Visuals, Window,
 };
 use egui_winit_vulkano::Gui;
 use vulkano::swapchain::PresentMode;
@@ -15,6 +14,7 @@ pub struct Options {
     pub recreate_swapchain: bool,
     pub present_modes: Vec<PresentMode>,
     pub present_mode: PresentMode,
+    theme: Theme,
 }
 
 #[derive(Debug, Clone)]
@@ -44,11 +44,31 @@ impl State {
         let fps = self.frame_timings.len() as f32 / total_time.as_secs_f32();
 
         gui.immediate_ui(|gui| {
+            let bg_color = match self.options.theme {
+                Theme::Dark => Color32::from_black_alpha(96),
+                Theme::Light => Color32::from_white_alpha(96),
+            };
+            let dark_theme = {
+                let mut theme = Visuals::dark();
+                theme.override_text_color = Some(Color32::LIGHT_GRAY);
+                theme.panel_fill = Color32::from_black_alpha(96);
+                theme.window_corner_radius = CornerRadius::ZERO;
+                theme.window_shadow = egui::Shadow::NONE;
+                theme
+            };
+            let light_theme = {
+                let mut theme = Visuals::light();
+                theme.override_text_color = Some(Color32::DARK_GRAY);
+                theme.panel_fill = Color32::from_white_alpha(96);
+                theme.window_corner_radius = CornerRadius::ZERO;
+                theme.window_shadow = egui::Shadow::NONE;
+                theme
+            };
+
             let ctx = gui.context();
-            ctx.set_visuals_of(egui::Theme::Dark, egui::Visuals {
-                override_text_color: Some(Color32::LIGHT_GRAY),
-                ..Default::default()
-            });
+            ctx.set_theme(self.options.theme);
+            ctx.set_visuals_of(Theme::Dark, dark_theme);
+            ctx.set_visuals_of(Theme::Light, light_theme);
 
             Window::new(format!("FPS: {fps:.2}"))
                 .id(self.id_fps)
@@ -56,12 +76,7 @@ impl State {
                 .default_pos([0., 0.])
                 .resizable(false)
                 .default_width(300.)
-                .frame(Frame::NONE
-                    .fill(Color32::from_black_alpha(96))
-                    .shadow(Shadow::NONE)
-                    .corner_radius(CornerRadius::ZERO)
-                    .inner_margin(Margin::same(5)),
-                )
+                .frame(Frame::NONE.fill(bg_color).inner_margin(5))
                 .show(&ctx, |ui| {
                     Frame::canvas(ui.style())
                         .multiply_with_opacity(0.5)
@@ -73,12 +88,7 @@ impl State {
                 .anchor(Align2::RIGHT_TOP, [0., 0.])
                 .resizable(false)
                 .default_width(300.)
-                .frame(Frame::NONE
-                    .fill(Color32::from_black_alpha(96))
-                    .shadow(Shadow::NONE)
-                    .corner_radius(CornerRadius::ZERO)
-                    .inner_margin(Margin::same(5)),
-                )
+                .frame(Frame::NONE.fill(bg_color).inner_margin(5))
                 .show(&ctx, |ui| {
                     egui::Grid::new("options_grid")
                         .num_columns(2)
@@ -108,14 +118,27 @@ impl State {
             }
         }
 
-        ui.label("Present Mode")
-            .on_hover_ui(|ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Sets the vulkan present mode.");
-                });
+        ui.label("Theme").on_hover_ui(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Sets the UI theme to dark or light.");
             });
+        });
+        egui::ComboBox::from_id_salt("Theme select")
+            .selected_text(format!("{:?}", state.theme))
+            .show_ui(ui, |ui| {
+                for theme in [Theme::Dark, Theme::Light] {
+                    ui.selectable_value(&mut state.theme, theme, format!("{:?}", theme));
+                }
+            });
+        ui.end_row();
+
+        ui.label("Present Mode").on_hover_ui(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Sets the vulkan present mode.");
+            });
+        });
         let present_mode_old = state.present_mode;
-        egui::ComboBox::from_id_salt("Present mode")
+        egui::ComboBox::from_id_salt("Present mode select")
             .selected_text(present_mode_label(present_mode_old))
             .show_ui(ui, |ui| {
                 for &mode in state.present_modes.iter() {
@@ -137,6 +160,7 @@ impl State {
             return;
         }
 
+        let color = ui.visuals().override_text_color.unwrap_or(Color32::GRAY);
         let w = 250.;
         let h = 100.;
         let padding = 5.;
@@ -165,7 +189,7 @@ impl State {
         }
 
         // draw axis
-        let stroke = Stroke::new(1.0, Color32::WHITE);
+        let stroke = Stroke::new(1.0, color);
         let a = Pos2::new(rect.left() + padding, rect.top());
         let b = Pos2::new(rect.left() + padding, rect.bottom());
         painter.line_segment([a, b], stroke);
@@ -179,7 +203,7 @@ impl State {
             Align2::LEFT_TOP,
             format!("{time_scale:2.}"),
             FontId::monospace(10.),
-            Color32::WHITE,
+            color,
         );
     }
 }
@@ -196,6 +220,7 @@ impl Default for State {
                 recreate_swapchain: false,
                 present_modes: Vec::new(),
                 present_mode: PresentMode::Fifo,
+                theme: Theme::Dark,
             },
         }
     }
