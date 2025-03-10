@@ -32,7 +32,7 @@ use vulkano::{
     render_pass::{Framebuffer, RenderPass, Subpass},
     swapchain::{
         self,
-        PresentMode, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo,
+        PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo,
     },
     sync::{
         self,
@@ -323,17 +323,29 @@ impl App {
 
     pub fn get_swapchain(&self) -> &Arc<Swapchain> { &self.swapchain }
 
+    pub fn get_surface_present_modes(&self) -> Result<Vec<PresentMode>, Validated<VulkanError>> {
+        self.device.physical_device().surface_present_modes(
+            self.swapchain.surface(),
+            SurfaceInfo::default(),
+        )
+    }
+
     pub fn gui_pass(&self) -> Subpass {
         Subpass::from(self.render_pass.clone(), 1).unwrap()
     }
 
-    pub fn recreate_swapchain(&mut self, dimensions: PhysicalSize<u32>) {
+    pub fn recreate_swapchain(
+        &mut self,
+        dimensions: PhysicalSize<u32>,
+        options: &crate::gui::Options,
+    ) -> anyhow::Result<()> {
         let (new_swapchain, new_images) = self.swapchain
             .recreate(SwapchainCreateInfo {
                 image_extent: dimensions.into(),
+                present_mode: options.present_mode,
                 ..self.swapchain.create_info()
             })
-            .expect("failed to recreate swapchain");
+            .context("failed to recreate swapchain")?;
 
         self.swapchain = new_swapchain;
         self.framebuffers = get_framebuffers(
@@ -352,7 +364,7 @@ impl App {
                 self.viewport.clone(),
                 &self.uniform_buffers_frag,
                 self.descriptor_set_allocator.clone(),
-            ).unwrap();
+            ).context("failed to update pipeline")?;
         }
         self.command_buffers = get_command_buffers(
             self.fences.len(),
@@ -361,6 +373,8 @@ impl App {
             &self.pipelines,
             self.render_pass.clone(),
         );
+
+        Ok(())
     }
 
     pub fn draw(&mut self, time: f32, gui: Option<&mut Gui>) -> anyhow::Result<bool> {

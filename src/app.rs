@@ -143,6 +143,7 @@ impl App {
             GuiConfig::default(),
         );
 
+        self.state.options.present_modes = vk_app.get_surface_present_modes()?;
         self.app = Some((window, vk_app, gui));
         self.swapchain_dirty = true;
         self.camera.position = START_POSITION;
@@ -263,17 +264,22 @@ impl ApplicationHandler for App {
         fps_info.last_frame = now;
         fps_info.frame_count += 1;
 
-        // render gui
-        self.state.render(gui, elapsed_dur);
-
         // recreate swapchain if needed
         let extent = window.inner_size();
-        if self.swapchain_dirty {
+        if self.swapchain_dirty || self.state.options.recreate_swapchain {
             if extent.width == 0 || extent.height == 0 {
                 return;
             }
-            vk_app.recreate_swapchain(extent);
+            self.state.options.recreate_swapchain = false;
+            if let Err(err) = vk_app.recreate_swapchain(extent, &self.state.options) {
+                log::error!("error while recreating swapchain, exiting: {err:?}");
+                event_loop.exit();
+                return;
+            }
         }
+
+        // render gui
+        self.state.render(gui, elapsed_dur);
 
         // update position
         let delta = elapsed * (self.scroll_lines * 0.4).exp();
