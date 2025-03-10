@@ -31,9 +31,9 @@ const HEIGHT: u32 = 600;
 const TITLE: &str = "shaderpixel";
 const START_POSITION: Vec3 = Vec3::from_array([0., 1.5, 3.]);
 
+#[derive(Debug)]
 struct FpsInfo {
     last_frame: Instant,
-    last_count_start: Instant,
     frame_count: u32,
 }
 
@@ -250,30 +250,21 @@ impl ApplicationHandler for App {
         }
 
         let (window, vk_app, gui) = self.app.as_mut().unwrap();
-        self.state.render(gui);
 
         // update fps info
         let now = Instant::now();
+        let elapsed_dur = self.fps_info.as_ref().map(|info| now.duration_since(info.last_frame));
         let fps_info = self.fps_info.get_or_insert(FpsInfo {
             last_frame: now,
-            last_count_start: now,
             frame_count: 0,
         });
-        let elapsed = fps_info.last_frame.elapsed().as_secs_f32();
+        let elapsed = elapsed_dur.unwrap_or_default().as_secs_f32();
         self.time += elapsed;
         fps_info.last_frame = now;
         fps_info.frame_count += 1;
 
-        // print fps
-        let time = fps_info.last_count_start.elapsed();
-        if time.as_millis() > 1000 {
-            use std::io::Write;
-
-            eprint!("fps: {:.2}        \r", fps_info.frame_count as f32 / time.as_secs_f32());
-            std::io::stdout().flush().unwrap();
-            fps_info.last_count_start = now;
-            fps_info.frame_count = 0;
-        }
+        // render gui
+        self.state.render(gui, elapsed_dur);
 
         // recreate swapchain if needed
         let extent = window.inner_size();
@@ -316,7 +307,6 @@ impl ApplicationHandler for App {
 
 
         // draw and remember if swapchain is dirty
-        //self.swapchain_dirty = match vk_app.draw(self.time) {
         self.swapchain_dirty = match vk_app.draw(self.time, Some(gui)) {
             Ok(swapchain_dirty) => swapchain_dirty,
             Err(err) => {
