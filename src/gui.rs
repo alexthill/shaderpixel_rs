@@ -1,3 +1,5 @@
+use crate::art::{ArtObject, ArtOption, ArtOptionType};
+
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -23,12 +25,18 @@ pub struct State {
     open: bool,
     open_fps: bool,
     open_options: bool,
+    open_art_options: bool,
     frame_timings: VecDeque<Duration>,
     pub options: Options,
 }
 
 impl State {
-    pub fn render(&mut self, gui: &mut Gui, time: Option<Duration>) {
+    pub fn render(
+        &mut self,
+        gui: &mut Gui,
+        art: Option<&mut ArtObject>,
+        time: Option<Duration>,
+    ) {
         let total_time = if let Some(time) = time {
             self.frame_timings.push_front(time);
             let mut total_time = Duration::default();
@@ -42,6 +50,10 @@ impl State {
             Duration::from_secs(1)
         };
         let fps = self.frame_timings.len() as f32 / total_time.as_secs_f32();
+
+        if !self.open {
+            return;
+        }
 
         gui.immediate_ui(|gui| {
             let bg_color = match self.options.theme {
@@ -83,7 +95,7 @@ impl State {
                         .show(ui, |ui| Self::draw_fps_chart(ui, &self.frame_timings));
                 });
 
-            Window::new("Options")
+            let options_win = Window::new("Options")
                 .open(&mut self.open_options)
                 .anchor(Align2::RIGHT_TOP, [0., 0.])
                 .resizable(false)
@@ -98,6 +110,25 @@ impl State {
                             Self::options_grid_contents(ui, &mut self.options);
                         });
                 });
+
+            if let Some(art) = art {
+                let offset_y = options_win.map(|win| win.response.rect.bottom()).unwrap_or(0.);
+                Window::new(format!("{} Options", art.name))
+                    .open(&mut self.open_art_options)
+                    .anchor(Align2::RIGHT_TOP, [0., offset_y])
+                    .resizable(false)
+                    .default_width(300.)
+                    .frame(Frame::NONE.fill(bg_color).inner_margin(5))
+                    .show(&ctx, |ui| {
+                        egui::Grid::new("art_options_grid")
+                            .num_columns(2)
+                            .spacing([40.0, 4.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                Self::art_options_grid_contents(ui, &mut art.options);
+                            });
+                    });
+            }
         });
     }
 
@@ -105,6 +136,25 @@ impl State {
         self.open = !self.open;
         self.open_fps = self.open;
         self.open_options = self.open;
+        self.open_art_options = self.open;
+    }
+
+    fn art_options_grid_contents(ui: &mut Ui, options: &mut [ArtOption]) {
+        for option in options {
+            ui.label(option.label());
+            match &mut option.ty {
+                ArtOptionType::Slider { value, min, max } => {
+                    ui.add(egui::Slider::new(value, *min..=*max));
+                }
+                ArtOptionType::Stroke { width, color } => {
+                    let mut stroke = egui::Stroke::from((*width, *color));
+                    ui.add(&mut stroke);
+                    *width = stroke.width;
+                    *color = stroke.color;
+                }
+            }
+            ui.end_row();
+        }
     }
 
     fn options_grid_contents(ui: &mut Ui, state: &mut Options) {
@@ -215,6 +265,7 @@ impl Default for State {
             open: true,
             open_fps: true,
             open_options: true,
+            open_art_options: true,
             frame_timings: VecDeque::new(),
             options: Options {
                 recreate_swapchain: false,

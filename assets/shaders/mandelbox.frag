@@ -5,6 +5,11 @@ layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 cameraPos;
 layout(location = 2) in float cameraDistToContainer;
 
+layout(set = 0, binding = 1) uniform UniformBufferObject {
+    vec4 options;
+    float time;
+} ubo;
+
 layout(location = 0) out vec4 outColor;
 
 const int MAX_ITERS = 30;
@@ -12,10 +17,9 @@ const int MAX_STEPS = 128;
 const float INSIDE_SCALE = 4.5;
 const float MAX_DIST = INSIDE_SCALE * 2.0;
 
-// TODO make these configurable
-const float scaleFactor = 3.0;
-const int maxIterations = 10;
-const float epsilon = 0.0002;
+float scaleFactor = ubo.options[0];
+int maxIterations = int(ubo.options[1]);
+float epsilon = ubo.options[2];
 
 float dist_estimate(vec3 ray_pos, float constant1, float constant2) {
     vec3 c = ray_pos;

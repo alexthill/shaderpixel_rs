@@ -8,12 +8,14 @@
 layout(location = 0) in vec3 fragPos;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
+    vec4 options;
     float time;
 } ubo;
 
 layout(location = 0) out vec4 outColor;
 
-const vec3 shapeColor = vec3(1.0, 0.3, 0.3);
+float time = ubo.time * ubo.options[3];
+vec3 shapeColor = ubo.options.xyz;
 const vec3 backgroundColor = vec3(0.12);
 
 float sdfCircle(vec2 center, float r, vec2 pos) {
@@ -70,7 +72,7 @@ float sdfEar(vec2 center, float r, float angle, vec2 pos) {
 
 float sdfEars(vec2 uv) {
     float a = 0.628;
-    a += sin(ubo.time + 3.14) * 0.1;
+    a += sin(time + PI) * 0.1;
     float earL = sdfEar(vec2(0.0, 60.0), 60.0, a, uv);
     float earR = sdfEar(vec2(0.0, 60.0), 60.0, -a, uv);
     return min(earL, earR);
@@ -90,8 +92,8 @@ float sdfWhisker(vec2 uv, float a, float startX) {
 float sdfWhiskers(vec2 uv) {
     float a = 0.314;
     float b = 0.628;
-    a += sin(ubo.time + 3.14) * 0.1;
-    b += sin(ubo.time + 3.14) * 0.1;
+    a += sin(time + PI) * 0.1;
+    b += sin(time + PI) * 0.1;
     float startX = 20.0;
     float w1 = sdfWhisker(uv, a, startX);
     float w2 = sdfWhisker(uv, b, startX);
@@ -101,7 +103,7 @@ float sdfWhiskers(vec2 uv) {
 }
 
 float sdfNose(vec2 uv) {
-    uv += vec2(0, sin(ubo.time + 3.14) + 1.0);
+    uv += vec2(0, sin(time + PI) + 1.0);
     float c1 = sdfCircle(vec2(-10, -14), 11.0, uv);
     float c2 = sdfCircle(vec2(10, -14), 11.0, uv);
     float c3 = sdfCircle(vec2(0, -7), 10.0, uv);
@@ -109,7 +111,7 @@ float sdfNose(vec2 uv) {
 }
 
 float sdfCheeks(vec2 uv) {
-    uv += vec2(0, sin(ubo.time + 3.14) + 1.0);
+    uv += vec2(0, sin(time + PI) + 1.0);
     vec2 offset1 = vec2(2, 2);
     vec2 offset2 = vec2(-2, 2);
     float c1, c2;
@@ -123,8 +125,8 @@ float sdfCheeks(vec2 uv) {
 }
 
 float sdfEyes(vec2 uv) {
-    vec2 offset1 = vec2(0.0, sin(ubo.time + 3.14 * 2.0) + 1.0) * 2.0;
-    vec2 offset2 = vec2(sin(ubo.time + 3.14), 0.0) * 2.0;
+    vec2 offset1 = vec2(0.0, sin(time + PI * 2.0) + 1.0) * 2.0;
+    vec2 offset2 = vec2(sin(time + PI), 0.0) * 2.0;
     float pupil, eye;
     pupil = -sdfPetal(vec2(10, 22) + offset2, vec2(32, 22) + offset2, 15.0, uv);
     eye = sdfPetal(vec2(20, 20) + offset1, vec2(25, 25), 15.0, uv);

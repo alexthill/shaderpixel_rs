@@ -65,7 +65,6 @@ pub struct App {
     fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     previous_fence_i: usize,
     pipelines: Vec<MyPipeline>,
-    uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
 
     // If this falls out of scope then there will be no more debug events.
     // Put it at the end so that it gets dropped last.
@@ -77,7 +76,7 @@ impl App {
     pub fn new(
         window: Arc<Window>,
         model: NormalizedObj,
-        art_objs: Vec<ArtObject>,
+        art_objs: &[ArtObject],
     ) -> Self {
         log::debug!("creating vulkan app");
 
@@ -226,24 +225,19 @@ impl App {
             },
         );
 
-        let uniform_buffers_frag = (0..frames_in_flight).map(|_| {
-            uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
-        }).collect::<Vec<_>>();
-        let uniform_buffers = (0..frames_in_flight).map(|_| {
-            uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
-        }).collect::<Vec<_>>();
         let pipeline_main = MyPipeline::new(
             "main".to_owned(),
             Mat4::IDENTITY,
+            None,
             device.clone(),
             vertex_buffer,
             index_buffer,
-            uniform_buffers,
             Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
             Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
             render_pass.clone(),
             viewport.clone(),
-            &uniform_buffers_frag,
+            frames_in_flight,
+            &uniform_buffer_allocator,
             descriptor_set_allocator.clone(),
         ).unwrap();
 
@@ -260,21 +254,19 @@ impl App {
                 indices,
                 memory_allocator.clone(),
             );
-            let uniform_buffers = (0..frames_in_flight).map(|_| {
-                uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
-            }).collect::<Vec<_>>();
             let pipeline = MyPipeline::new(
-                art_obj.name,
+                art_obj.name.clone(),
                 art_obj.matrix,
+                art_obj.option_values.as_ref().map(|v| Arc::clone(v)),
                 device.clone(),
                 vertex_buffer,
                 index_buffer,
-                uniform_buffers,
-                art_obj.shader_vert,
-                art_obj.shader_frag,
+                Arc::clone(&art_obj.shader_vert),
+                Arc::clone(&art_obj.shader_frag),
                 render_pass.clone(),
                 viewport.clone(),
-                &uniform_buffers_frag,
+                frames_in_flight,
+                &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
             ).unwrap();
             pipelines.push(pipeline);
@@ -314,7 +306,6 @@ impl App {
             fences: vec![None; frames_in_flight],
             previous_fence_i: 0,
             pipelines,
-            uniform_buffers_frag,
             _debug: debug,
         }
     }
@@ -362,7 +353,6 @@ impl App {
                 self.device.clone(),
                 self.render_pass.clone(),
                 self.viewport.clone(),
-                &self.uniform_buffers_frag,
                 self.descriptor_set_allocator.clone(),
             ).context("failed to update pipeline")?;
         }
@@ -377,7 +367,12 @@ impl App {
         Ok(())
     }
 
-    pub fn draw(&mut self, time: f32, gui: Option<&mut Gui>) -> anyhow::Result<bool> {
+    /// Draws the render_pass and returns whether the swapchain is dirty.
+    pub fn draw(
+        &mut self,
+        time: f32,
+        gui: Option<&mut Gui>,
+    ) -> anyhow::Result<bool> {
         let mut pipeline_changed = false;
         for pipeline in self.pipelines[1..].iter_mut() {
             if pipeline.has_changed() {
@@ -387,7 +382,6 @@ impl App {
                     self.device.clone(),
                     self.render_pass.clone(),
                     self.viewport.clone(),
-                    &self.uniform_buffers_frag,
                     self.descriptor_set_allocator.clone(),
                 ).context("failed to update pipeline")?;
                 pipeline_changed |= pipeline.get_pipeline().is_some();
@@ -463,7 +457,7 @@ impl App {
 
         self.fences[image_i] = match future.map_err(Validated::unwrap) {
             // We need to call .boxed() on the future at some point to get a dyn GpuFuture.
-            // To do this it need to be wrapped in Arc, even if it is not send/sync.
+            // To do this it needs to be wrapped in an Arc, even if it is not send/sync.
             #[allow(clippy::arc_with_non_send_sync)]
             Ok(value) => Some(Arc::new(value)),
             Err(VulkanError::OutOfDate) => {
@@ -490,16 +484,9 @@ impl App {
             200.0,
         );
         for pipeline in self.pipelines.iter() {
-            if let Err(err) = pipeline.update_uniform_buffer(image_index, self.view_matrix, proj) {
+            if let Err(err) = pipeline.update_uniform_buffer(image_index, self.view_matrix, proj, time) {
                 log::error!("failed to update uniforms: {err:?}");
             }
-        }
-        let write = self.uniform_buffers_frag[image_index].write();
-        match write {
-            Ok(mut write) => *write = fs::UniformBufferObject {
-                time,
-            },
-            Err(err) => log::error!("failed to update uniforms: {err:?}"),
         }
     }
 }

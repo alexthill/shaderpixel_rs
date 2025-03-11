@@ -4,12 +4,15 @@ use super::{
     vertex::VertexPos,
 };
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Context;
-use glam::Mat4;
+use glam::{Mat4, Vec4};
 use vulkano::{
-    buffer::Subbuffer,
+    buffer::{
+        allocator::SubbufferAllocator,
+        Subbuffer,
+    },
     device::Device,
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator,
@@ -38,11 +41,13 @@ use vulkano::{
 pub struct MyPipeline {
     name: String,
     model_matrix: Mat4,
+    option_values: Option<Arc<RwLock<Vec4>>>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
     vertex_buffer: Subbuffer<[VertexPos]>,
     index_buffer: Subbuffer<[u32]>,
-    uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
+    uniform_buffers_vert: Vec<Subbuffer<vs::UniformBufferObject>>,
+    uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
     vs: Arc<HotShader>,
     fs: Arc<HotShader>,
 }
@@ -52,15 +57,16 @@ impl MyPipeline {
     pub fn new(
         name: String,
         model_matrix: Mat4,
+        option_values: Option<Arc<RwLock<Vec4>>>,
         device: Arc<Device>,
         vertex_buffer: Subbuffer<[VertexPos]>,
         index_buffer: Subbuffer<[u32]>,
-        uniform_buffers: Vec<Subbuffer<vs::UniformBufferObject>>,
         vs: Arc<HotShader>,
         fs: Arc<HotShader>,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
-        uniform_buffers_frag: &[Subbuffer<fs::UniformBufferObject>],
+        frames_in_flight: usize,
+        uniform_buffer_allocator: &SubbufferAllocator,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<Self> {
         log::debug!("creating pipeline {name}");
@@ -68,14 +74,24 @@ impl MyPipeline {
         vs.set_device(device.clone());
         fs.set_device(device.clone());
 
+        let uniform_buffers_vert = (0..frames_in_flight).map(|_| {
+            uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
+        }).collect::<Vec<_>>();
+        let uniform_buffers_frag = (0..frames_in_flight).map(|_| {
+            uniform_buffer_allocator.allocate_sized::<fs::UniformBufferObject>().unwrap()
+        }).collect::<Vec<_>>();
+
+
         let mut pipeline = Self {
             name,
             model_matrix,
+            option_values,
             pipeline: None,
             descriptor_sets: None,
             vertex_buffer,
             index_buffer,
-            uniform_buffers,
+            uniform_buffers_vert,
+            uniform_buffers_frag,
             vs,
             fs,
         };
@@ -83,7 +99,6 @@ impl MyPipeline {
             device,
             render_pass,
             viewport,
-            uniform_buffers_frag,
             descriptor_set_allocator,
         )?;
         Ok(pipeline)
@@ -123,11 +138,22 @@ impl MyPipeline {
         idx: usize,
         view: Mat4,
         proj: Mat4,
+        time: f32,
     ) -> anyhow::Result<()> {
-        *self.uniform_buffers[idx].write()? = vs::UniformBufferObject {
+        *self.uniform_buffers_vert[idx].write()? = vs::UniformBufferObject {
             model: self.model_matrix.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             proj: proj.to_cols_array_2d(),
+        };
+        let options = match &self.option_values {
+            Some(option_values) => option_values.read()
+                .map_err(|_| anyhow::anyhow!("Lock poisoned"))?
+                .to_array(),
+            None => [0.; 4],
+        };
+        *self.uniform_buffers_frag[idx].write()? = fs::UniformBufferObject {
+            options,
+            time,
         };
         Ok(())
     }
@@ -137,7 +163,6 @@ impl MyPipeline {
         device: Arc<Device>,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
-        uniform_buffers_frag: &[Subbuffer<fs::UniformBufferObject>],
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
         let vs_module = self.vs.get_module()?;
@@ -153,7 +178,7 @@ impl MyPipeline {
                 viewport
             )?;
             self.pipeline = Some(pipeline);
-            self.update_descriptor_sets(uniform_buffers_frag, descriptor_set_allocator)
+            self.update_descriptor_sets(descriptor_set_allocator)
                 .context("failed to update descriptor_sets")?;
         } else {
             self.vs.reload(false);
@@ -165,22 +190,23 @@ impl MyPipeline {
 
     fn update_descriptor_sets(
         &mut self,
-        uniform_buffers_frag: &[Subbuffer<fs::UniformBufferObject>],
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
-        debug_assert_eq!(self.uniform_buffers.len(), uniform_buffers_frag.len());
+        // sanity check
+        debug_assert_eq!(self.uniform_buffers_vert.len(), self.uniform_buffers_frag.len());
+
         let Some(pipeline) = self.pipeline.as_ref() else {
             return Ok(());
         };
         let layout = &pipeline.layout().set_layouts()[0];
-        let mut descriptor_sets = Vec::with_capacity(self.uniform_buffers.len());
+        let mut descriptor_sets = Vec::with_capacity(self.uniform_buffers_vert.len());
 
-        // A for loop is nicer than zip iterators together.
+        // A for loop is nicer than zipping iterators together.
         #[allow(clippy::needless_range_loop)]
-        for i in 0..self.uniform_buffers.len() {
+        for i in 0..self.uniform_buffers_vert.len() {
             let write_sets = [
-                WriteDescriptorSet::buffer(0, self.uniform_buffers[i].clone()),
-                WriteDescriptorSet::buffer(1, uniform_buffers_frag[i].clone()),
+                WriteDescriptorSet::buffer(0, self.uniform_buffers_vert[i].clone()),
+                WriteDescriptorSet::buffer(1, self.uniform_buffers_frag[i].clone()),
             ];
             let write_sets = write_sets
                 .into_iter()

@@ -1,12 +1,10 @@
 use crate::{
     art::ArtObject,
-    fs,
     gui::State,
     model::{
         env_generator::default_env,
-        obj::NormalizedObj,
     },
-    vulkan::{HotShader, VkApp},
+    vulkan::VkApp,
 };
 
 use std::{
@@ -16,7 +14,7 @@ use std::{
 
 use anyhow::Context;
 use egui_winit_vulkano::{Gui, GuiConfig};
-use glam::{Mat4, Quat, Vec3, Vec4};
+use glam::{Mat4, Vec3, Vec4};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -62,6 +60,7 @@ struct KeyStates {
 
 #[derive(Default)]
 pub struct App {
+    pub art_objects: Vec<ArtObject>,
     app: Option<(Arc<Window>, VkApp, Gui)>,
     swapchain_dirty: bool,
     state: State,
@@ -92,48 +91,7 @@ impl App {
         let window = Arc::new(window);
 
         let model = default_env().normalize()?;
-        let art_objects = {
-            let model_square = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/square.obj")?)?);
-            let model_cube = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/cube_inside.obj")?)?);
-            let shader_2d = Arc::new(HotShader::new_vert("assets/shaders/art2d.vert"));
-            let shader_3d = Arc::new(HotShader::new_vert("assets/shaders/art3d.vert"));
-            vec![
-                ArtObject {
-                    name: "mandelbrot".to_owned(),
-                    model: model_square.clone(),
-                    matrix: Mat4::from_scale_rotation_translation(
-                        Vec3::splat(0.5),
-                        Quat::from_rotation_y(90_f32.to_radians()),
-                        [5.99, 1.5, -1.5].into(),
-                    ),
-                    shader_vert: shader_2d.clone(),
-                    shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbrot.frag")),
-                },
-                ArtObject {
-                    name: "sdf_cat".to_owned(),
-                    model: model_square.clone(),
-                    matrix: Mat4::from_scale_rotation_translation(
-                        Vec3::splat(0.5),
-                        Quat::from_rotation_y(90_f32.to_radians()),
-                        [5.99, 1.5, -4.5].into(),
-                    ),
-                    shader_vert: shader_2d.clone(),
-                    shader_frag: Arc::new(HotShader::new_frag("assets/shaders/sdf_cat.frag")),
-                },
-                ArtObject {
-                    name: "mandelbox".to_owned(),
-                    model: model_cube.clone(),
-                    matrix: Mat4::from_scale_rotation_translation(
-                        Vec3::splat(0.5),
-                        Quat::from_rotation_y(0_f32.to_radians()),
-                        [-2.5, 1.51, -0.5].into(),
-                    ),
-                    shader_vert: shader_3d.clone(),
-                    shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbox.frag")),
-                },
-            ]
-        };
-        let vk_app = VkApp::new(Arc::clone(&window), model, art_objects);
+        let vk_app = VkApp::new(Arc::clone(&window), model, &self.art_objects);
         let gui = Gui::new_with_subpass(
             event_loop,
             vk_app.get_swapchain().surface().clone(),
@@ -278,8 +236,33 @@ impl ApplicationHandler for App {
             }
         }
 
+        // setup nearest_art options
+        let mut nearest_art = self.art_objects.iter_mut().min_by(|a, b| {
+            let pos_a = a.matrix.transform_point3(Vec3::splat(0.));
+            let dist_a = self.camera.position.distance_squared(pos_a);
+            let pos_b = b.matrix.transform_point3(Vec3::splat(0.));
+            let dist_b = self.camera.position.distance_squared(pos_b);
+            dist_a.total_cmp(&dist_b)
+        });
+        if let Some(art) = nearest_art.as_mut() {
+            let pos = art.matrix.transform_point3(Vec3::splat(0.));
+            let dist = self.camera.position.distance_squared(pos);
+            if dist > 2. {
+                nearest_art = None;
+            } else if let Some(option_values) = art.option_values.as_mut() {
+                let mut values = [0.; 4];
+                let mut i = 0;
+                for option in art.options.iter() {
+                    option.ty.save_value(&mut values, &mut i);
+                }
+                if let Ok(mut option_values) = option_values.write() {
+                    *option_values = values.into();
+                }
+            }
+        }
+
         // render gui
-        self.state.render(gui, elapsed_dur);
+        self.state.render(gui, nearest_art, elapsed_dur);
 
         // update position
         let delta = elapsed * (self.scroll_lines * 0.4).exp();
@@ -310,7 +293,6 @@ impl ApplicationHandler for App {
         vk_app.view_matrix = Mat4::from_rotation_x(self.camera.angle_pitch)
             * Mat4::from_rotation_y(self.camera.angle_yaw)
             * Mat4::from_translation(-self.camera.position);
-
 
         // draw and remember if swapchain is dirty
         self.swapchain_dirty = match vk_app.draw(self.time, Some(gui)) {
