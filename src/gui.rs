@@ -22,6 +22,7 @@ pub struct Options {
 #[derive(Debug, Clone)]
 pub struct State {
     id_fps: Id,
+    id_art_options: Id,
     open: bool,
     open_fps: bool,
     open_options: bool,
@@ -114,6 +115,7 @@ impl State {
             if let Some(art) = art {
                 let offset_y = options_win.map(|win| win.response.rect.bottom()).unwrap_or(0.);
                 Window::new(format!("{} Options", art.name))
+                    .id(self.id_art_options)
                     .open(&mut self.open_art_options)
                     .anchor(Align2::RIGHT_TOP, [0., offset_y])
                     .resizable(false)
@@ -143,7 +145,13 @@ impl State {
         for option in options {
             ui.label(option.label());
             match &mut option.ty {
-                ArtOptionType::Slider { value, min, max } => {
+                ArtOptionType::Checkbox { checked } => {
+                    ui.checkbox(checked, "enable");
+                }
+                ArtOptionType::SliderF32 { value, min, max } => {
+                    ui.add(egui::Slider::new(value, *min..=*max));
+                }
+                ArtOptionType::SliderI32 { value, min, max } => {
                     ui.add(egui::Slider::new(value, *min..=*max));
                 }
                 ArtOptionType::Stroke { width, color } => {
@@ -262,6 +270,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             id_fps: Id::new("fps indicator"),
+            id_art_options: Id::new("art options"),
             open: true,
             open_fps: true,
             open_options: true,
