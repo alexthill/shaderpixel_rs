@@ -1,6 +1,7 @@
 use crate::model::obj::NormalizedObj;
 use crate::vulkan::HotShader;
 
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use egui::Color32;
@@ -12,6 +13,7 @@ pub struct ArtObject {
     pub matrix: Mat4,
     pub shader_vert: Arc<HotShader>,
     pub shader_frag: Arc<HotShader>,
+    pub texture: Option<PathBuf>,
     pub options: Vec<ArtOption>,
     pub option_values: Option<Arc<RwLock<Vec4>>>,
 }

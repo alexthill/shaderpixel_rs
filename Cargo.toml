@@ -11,6 +11,7 @@ anyhow = "1.0"
 egui = "0.31"
 egui_demo_lib = "0.31.0"
 egui_winit_vulkano = { version = "0.28", default-features = false, features = ["links", "wayland", "x11"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 env_logger = "0.11"
 glam = "0.30"
 log = "0.4"
@@ -20,3 +21,8 @@ shaderc = "0.8.3"
 vulkano = "0.35"
 vulkano-shaders = "0.35"
 winit = "0.30"
+
+# compile image always with optimizations to make image loading faster
+[profile.dev.package.image]
+opt-level = 3
+overflow-checks = false

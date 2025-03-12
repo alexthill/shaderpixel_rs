@@ -7,6 +7,7 @@ use super::{
     helpers::*,
     pipeline::MyPipeline,
     shader::{watch_shaders, HotShader},
+    texture::Texture,
     vertex::MyVertexTrait,
 };
 
@@ -225,9 +226,18 @@ impl App {
             },
         );
 
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(),
+            StandardCommandBufferAllocatorCreateInfo {
+                secondary_buffer_count: 32,
+                ..Default::default()
+            },
+        ));
+
         let pipeline_main = MyPipeline::new(
             "main".to_owned(),
             Mat4::IDENTITY,
+            None,
             None,
             device.clone(),
             vertex_buffer,
@@ -254,10 +264,29 @@ impl App {
                 indices,
                 memory_allocator.clone(),
             );
+            let texture = if let Some(path) = art_obj.texture.as_ref() {
+                let texture = Texture::new(
+                    path,
+                    device.clone(),
+                    queue.clone(),
+                    command_buffer_allocator.clone(),
+                    memory_allocator.clone(),
+                );
+                match texture {
+                    Ok(texture) => Some(texture),
+                    Err(err) => {
+                        log::error!("failed to load texture: {err:?}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             let pipeline = MyPipeline::new(
                 art_obj.name.clone(),
                 art_obj.matrix,
                 art_obj.option_values.as_ref().map(|v| Arc::clone(v)),
+                texture,
                 device.clone(),
                 vertex_buffer,
                 index_buffer,
@@ -271,14 +300,6 @@ impl App {
             ).unwrap();
             pipelines.push(pipeline);
         }
-
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
-            device.clone(),
-            StandardCommandBufferAllocatorCreateInfo {
-                secondary_buffer_count: 32,
-                ..Default::default()
-            },
-        ));
 
         let command_buffers = get_command_buffers(
             frames_in_flight,

@@ -1,6 +1,7 @@
 use super::{
     helpers::{fs, vs},
     shader::HotShader,
+    texture::Texture,
     vertex::VertexPos,
 };
 
@@ -42,6 +43,7 @@ pub struct MyPipeline {
     name: String,
     model_matrix: Mat4,
     option_values: Option<Arc<RwLock<Vec4>>>,
+    texture: Option<Texture>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
     vertex_buffer: Subbuffer<[VertexPos]>,
@@ -58,6 +60,7 @@ impl MyPipeline {
         name: String,
         model_matrix: Mat4,
         option_values: Option<Arc<RwLock<Vec4>>>,
+        texture: Option<Texture>,
         device: Arc<Device>,
         vertex_buffer: Subbuffer<[VertexPos]>,
         index_buffer: Subbuffer<[u32]>,
@@ -86,6 +89,7 @@ impl MyPipeline {
             name,
             model_matrix,
             option_values,
+            texture,
             pipeline: None,
             descriptor_sets: None,
             vertex_buffer,
@@ -204,14 +208,20 @@ impl MyPipeline {
         // A for loop is nicer than zipping iterators together.
         #[allow(clippy::needless_range_loop)]
         for i in 0..self.uniform_buffers_vert.len() {
-            let write_sets = [
+            let mut write_sets = vec![
                 WriteDescriptorSet::buffer(0, self.uniform_buffers_vert[i].clone()),
                 WriteDescriptorSet::buffer(1, self.uniform_buffers_frag[i].clone()),
             ];
+            if let Some(Texture { view, sampler }) = self.texture.as_ref() {
+                write_sets.push(
+                    WriteDescriptorSet::image_view_sampler(2, view.clone(), sampler.clone()),
+                );
+            }
             let write_sets = write_sets
                 .into_iter()
                 .filter(|set| {
-                    pipeline.descriptor_binding_requirements()
+                    pipeline
+                        .descriptor_binding_requirements()
                         .contains_key(&(0, set.binding()))
                 })
                 .collect::<Vec<_>>();

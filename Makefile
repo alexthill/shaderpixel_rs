@@ -22,11 +22,11 @@ build_release:
 	@docker exec --tty --workdir /src/$(NAME) $(CONTAINER) $(CARGO) build --release
 
 r: run
-run: build
+run: download build
 	@RUST_LOG=debug $(TARGET)/debug/$(BIN_NAME)
 
 rr: run_release
-run_release: build_release
+run_release: download build_release
 	@RUST_LOG=warn $(TARGET)/release/$(BIN_NAME)
 
 t: test
@@ -36,5 +36,9 @@ test:
 clean:
 	@echo "cargo clean"
 	@docker exec --tty --workdir /src/$(NAME) $(CONTAINER) $(CARGO) clean
+	rm -f assets/downloads/*
 
 re: clean run
+
+download:
+	./assets/download.sh

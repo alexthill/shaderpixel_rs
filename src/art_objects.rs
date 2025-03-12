@@ -26,6 +26,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ),
             shader_vert: shader_2d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbrot.frag")),
+            texture: None,
             options: vec![],
             option_values: None,
         },
@@ -39,6 +40,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ),
             shader_vert: shader_2d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/sdf_cat.frag")),
+            texture: None,
             options: vec![
                 ArtOption::stroke("Color", 1., Color32::from_rgb(255, 76, 76)),
                 ArtOption::slider_f32("Speed", 1., 0., 10.),
@@ -55,6 +57,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbox.frag")),
+            texture: None,
             options: vec![
                 ArtOption::slider_f32("Scale", 3., -5., 5.),
                 ArtOption::slider_i32("Iterations", 10, 1, 100),
@@ -72,9 +75,26 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mengersponge.frag")),
+            texture: None,
             options: vec![
                 ArtOption::slider_i32("Depth", 4, 1, 10),
                 ArtOption::checkbox("Shadows", true),
+            ],
+            option_values: None,
+        },
+        ArtObject {
+            name: "Solar System".to_owned(),
+            model: model_cube.clone(),
+            matrix: Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.5),
+                Quat::from_rotation_y(0_f32.to_radians()),
+                [-2.5, 1.51, -5.5].into(),
+            ),
+            shader_vert: shader_3d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/solar.frag")),
+            texture: Some("assets/downloads/earth.jpg".into()),
+            options: vec![
+                ArtOption::slider_f32("Speed", 1., 0., 10.),
             ],
             option_values: None,
         },
