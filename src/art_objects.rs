@@ -119,6 +119,24 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             )),
             fn_update_data: None,
         },
+        ArtObject {
+            name: "Gem".to_owned(),
+            model: model_cube.clone(),
+            shader_vert: shader_3d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/gem.frag")),
+            texture: None,
+            options: vec![
+                ArtOption::slider_i32("GemType", 1, 0, 1),
+                ArtOption::slider_i32("ColorIndex", 2, 0, 7),
+                ArtOption::slider_f32("Speed", 1., 0., 2.),
+            ],
+            data: ArtData::new(Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.5),
+                Quat::from_rotation_y(0_f32.to_radians()),
+                [2.5, 1.51, -5.5].into(),
+            )),
+            fn_update_data: None,
+        },
     ];
 
     for art in art_objects.iter_mut() {
