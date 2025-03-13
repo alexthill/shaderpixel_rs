@@ -66,6 +66,7 @@ pub mod fs {
             // each element in an array takes up the same space as a whole vec4
             // use a vec4 as better alternative
             layout(set = 0, binding = 1) uniform UniformBufferObject {
+                vec4 light_pos;
                 vec4 options;
                 float time;
             } ubo;

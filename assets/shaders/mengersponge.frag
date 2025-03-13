@@ -6,6 +6,7 @@ layout(location = 1) in vec3 cameraPos;
 layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
+    vec4 light_pos;
     vec4 options;
     float time;
 } ubo;
@@ -18,7 +19,7 @@ const vec4 CONTAINER_COLOR = vec4(0.0, 0.0, 0.0, 0.4);
 
 int menger_depth = int(ubo.options[0]);
 bool enable_shadows = bool(ubo.options[1]);
-vec3 light_pos = vec3(4.0, 10.0, 4.0);
+bool enable_mssa = bool(ubo.options[2]);
 
 // Calculates the intersections of the axis-aligned box defined by the corners `c1` and `c2`
 // and the ray from `pos` in direction `dir`. It must be `c1` <= `c2`.
@@ -104,7 +105,7 @@ bool menger_shadow(vec3 corner_start, float size_start, vec3 dir, vec3 pos) {
     return false;
 }
 
-vec4 menger(vec3 corner_start, float size_start, vec3 dir, vec3 pos, float plane) {
+vec4 menger(vec3 corner_start, float size_start, vec3 dir, inout vec3 pos, float plane) {
     vec3 back_pos = pos - EPS * dir;
     for (int i = 0; i < MAX_MENGER_DEPTH * 4; ++i) {
         if (i == menger_depth * 4) {
@@ -116,7 +117,7 @@ vec4 menger(vec3 corner_start, float size_start, vec3 dir, vec3 pos, float plane
         if (shrink(pos, size, corner)) {
             vec3 shadow = vec3(1.0);
             if (enable_shadows && i > 0) {
-                vec3 light_dir = normalize(light_pos - back_pos);
+                vec3 light_dir = normalize(ubo.light_pos.xyz - back_pos);
                 bool is_shadow = menger_shadow(corner_start, size_start, light_dir, back_pos);
                 shadow = vec3(float(!is_shadow) * 0.5 + 0.5);
             }
@@ -151,17 +152,37 @@ vec4 menger(vec3 corner_start, float size_start, vec3 dir, vec3 pos, float plane
     return CONTAINER_COLOR;
 }
 
-void main() {
-    vec3 dir = normalize(fragPos - cameraPos);
+vec4 get_color(vec3 pos) {
+    vec3 dir = normalize(pos - cameraPos);
     mat2 inters;
     bool intersects = intersect_box(vec3(-0.75), vec3(0.75), dir, cameraPos, inters);
 
     if (!intersects) {
-        outColor = CONTAINER_COLOR;
+        return CONTAINER_COLOR;
     } else {
         vec2 inter = inters[0].x < 0.0 ? inters[1] : inters[0];
         float plane = mod(inter.y + 3.0, 6.0);
         vec3 pos = cameraPos + inter.x * dir;
-        outColor = menger(vec3(-0.75), 1.5, dir, pos, plane);
+        return menger(vec3(-0.75), 1.5, dir, pos, plane);
+    }
+}
+
+void main() {
+    outColor = get_color(fragPos);
+    if (!enable_mssa) {
+        return;
+    }
+
+    if (length(dFdx(outColor)) > 0.0) {
+        vec3 dx = dFdx(fragPos);
+        outColor += get_color(fragPos - 0.25 * dx);
+        outColor += get_color(fragPos + 0.25 * dx);
+        outColor /= 3.0;
+    }
+    if (length(dFdy(outColor)) > 0.0) {
+        vec3 dy = dFdy(fragPos);
+        outColor += get_color(fragPos - 0.25 * dy);
+        outColor += get_color(fragPos + 0.25 * dy);
+        outColor /= 3.0;
     }
 }

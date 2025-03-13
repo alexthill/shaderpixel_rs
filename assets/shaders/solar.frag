@@ -8,6 +8,7 @@ layout(location = 1) in vec3 cameraPos;
 layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
+    vec4 light_pos;
     vec4 options;
     float time;
 } ubo;

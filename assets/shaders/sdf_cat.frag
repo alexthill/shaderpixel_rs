@@ -8,6 +8,7 @@
 layout(location = 0) in vec3 fragPos;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
+    vec4 light_pos;
     vec4 options;
     float time;
 } ubo;

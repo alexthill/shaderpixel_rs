@@ -60,11 +60,11 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 [0., 0., 0.].into(),
             )),
             fn_update_data: Some(Box::new(|data, update| {
-                data.set_matrix(Mat4::from_scale_rotation_translation(
+                data.matrix = Mat4::from_scale_rotation_translation(
                     Vec3::splat(100.),
                     Quat::from_rotation_y(update.skybox_rotation_angle),
                     [0., 0., 0.].into(),
-                ));
+                );
             })),
         },
         ArtObject {
@@ -94,6 +94,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             options: vec![
                 ArtOption::slider_i32("Depth", 4, 1, 10),
                 ArtOption::checkbox("Shadows", true),
+                ArtOption::checkbox("MSAA", true),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
@@ -130,7 +131,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
         for option in art.options.iter() {
             option.ty.save_value(&mut values, &mut i);
         }
-        art.data.set_options(Some(values.into()));
+        art.data.option_values = Some(values.into());
     }
 
     Ok(art_objects)

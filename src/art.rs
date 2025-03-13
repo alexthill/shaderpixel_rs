@@ -25,8 +25,9 @@ pub struct ArtUpdateData {
 
 #[derive(Debug, Default)]
 pub struct ArtData {
-    matrix: Mat4,
-    option_values: Option<Vec4>,
+    pub matrix: Mat4,
+    pub light_pos: Vec4,
+    pub option_values: Option<Vec4>,
 }
 
 impl ArtData {
@@ -35,26 +36,6 @@ impl ArtData {
             matrix,
             ..Default::default()
         }
-    }
-
-    pub fn get_matrix(&self) -> Mat4 {
-        self.matrix
-    }
-
-    pub fn set_matrix(&mut self, matrix: Mat4) {
-        self.matrix = matrix
-    }
-
-    pub fn get_options(&self) -> Option<Vec4> {
-        self.option_values
-    }
-
-    pub fn set_options(&mut self, options: Option<Vec4>) {
-        self.option_values = options;
-    }
-
-    pub fn get_options_mut(&mut self) -> Option<&mut Vec4> {
-        self.option_values.as_mut()
     }
 }
 

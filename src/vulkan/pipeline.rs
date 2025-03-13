@@ -140,20 +140,21 @@ impl MyPipeline {
         time: f32,
         data: Option<&ArtData>,
     ) -> anyhow::Result<()> {
-        let model = data.map(|data| data.get_matrix()).unwrap_or(Mat4::IDENTITY);
+        let model = data.map(|data| data.matrix).unwrap_or(Mat4::IDENTITY);
         *self.uniform_buffers_vert[idx].write()? = vs::UniformBufferObject {
             model: model.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             proj: proj.to_cols_array_2d(),
         };
 
-        let options = data.and_then(|data| data.get_options())
-            .unwrap_or(Vec4::splat(0.))
-            .to_array();
-        *self.uniform_buffers_frag[idx].write()? = fs::UniformBufferObject {
-            options,
-            time,
-        };
+        if let Some(data) = data {
+            let options = data.option_values.unwrap_or(Vec4::splat(0.));
+            *self.uniform_buffers_frag[idx].write()? = fs::UniformBufferObject {
+                light_pos: data.light_pos.to_array(),
+                options: options.to_array(),
+                time,
+            };
+        }
 
         Ok(())
     }

@@ -241,14 +241,14 @@ impl ApplicationHandler for App {
         let mut nearest_art = self.art_objects.iter_mut()
             .filter(|a| !a.options.is_empty())
             .min_by(|a, b| {
-                let pos_a = a.data.get_matrix().transform_point3(Vec3::splat(0.));
+                let pos_a = a.data.matrix.transform_point3(Vec3::splat(0.));
                 let dist_a = self.camera.position.distance_squared(pos_a);
-                let pos_b = b.data.get_matrix().transform_point3(Vec3::splat(0.));
+                let pos_b = b.data.matrix.transform_point3(Vec3::splat(0.));
                 let dist_b = self.camera.position.distance_squared(pos_b);
                 dist_a.total_cmp(&dist_b)
             });
         if let Some(art) = nearest_art.as_mut() {
-            let pos = art.data.get_matrix().transform_point3(Vec3::splat(0.));
+            let pos = art.data.matrix.transform_point3(Vec3::splat(0.));
             let dist = self.camera.position.distance_squared(pos);
             if dist > 2. || art.options.is_empty() {
                 nearest_art = None;
@@ -260,7 +260,7 @@ impl ApplicationHandler for App {
 
         // update options data for nearest_art
         if let Some(art) = nearest_art.as_mut() {
-            if let Some(option_values) = art.data.get_options_mut() {
+            if let Some(option_values) = art.data.option_values.as_mut() {
                 let mut values = [0.; 4];
                 let mut i = 0;
                 for option in art.options.iter() {
@@ -274,7 +274,9 @@ impl ApplicationHandler for App {
         if self.gui_state.options.sun_movement {
             self.skybox_rotation_angle += elapsed * self.gui_state.options.sun_speed;
         }
+        let light_pos = Mat4::from_rotation_y(self.skybox_rotation_angle) * Vec4::splat(100.);
         for art in self.art_objects.iter_mut() {
+            art.data.light_pos = light_pos;
             if let Some(fn_update_data) = art.fn_update_data.as_ref() {
                 fn_update_data(&mut art.data, &ArtUpdateData {
                     skybox_rotation_angle: self.skybox_rotation_angle,
