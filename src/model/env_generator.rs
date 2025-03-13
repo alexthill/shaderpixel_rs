@@ -85,20 +85,20 @@ fn generate_env(
     );
 
     // the podests
-    for podest in podests {
-        let vidx = vertices.len() as u32;
-        for z in 0..2 {
-            for x in 0..2 {
-                vertices.push([podest[0] + x as f32, 0., podest[1] + z as f32]);
-                vertices.push([podest[0] + x as f32, 1., podest[1] + z as f32]);
-            }
-        }
-        faces.push(indices_to_face([vidx + 1, vidx + 5, vidx + 7, vidx + 3]));
-        faces.push(indices_to_face([vidx    , vidx + 1, vidx + 3, vidx + 2]));
-        faces.push(indices_to_face([vidx + 2, vidx + 3, vidx + 7, vidx + 6]));
-        faces.push(indices_to_face([vidx + 6, vidx + 7, vidx + 5, vidx + 4]));
-        faces.push(indices_to_face([vidx + 4, vidx + 5, vidx + 1, vidx    ]));
-    }
+    // for podest in podests {
+    //     let vidx = vertices.len() as u32;
+    //     for z in 0..2 {
+    //         for x in 0..2 {
+    //             vertices.push([podest[0] + x as f32, 0., podest[1] + z as f32]);
+    //             vertices.push([podest[0] + x as f32, 1., podest[1] + z as f32]);
+    //         }
+    //     }
+    //     faces.push(indices_to_face([vidx + 1, vidx + 5, vidx + 7, vidx + 3]));
+    //     faces.push(indices_to_face([vidx    , vidx + 1, vidx + 3, vidx + 2]));
+    //     faces.push(indices_to_face([vidx + 2, vidx + 3, vidx + 7, vidx + 6]));
+    //     faces.push(indices_to_face([vidx + 6, vidx + 7, vidx + 5, vidx + 4]));
+    //     faces.push(indices_to_face([vidx + 4, vidx + 5, vidx + 1, vidx    ]));
+    // }
 
     // the walls
     for wall in walls {

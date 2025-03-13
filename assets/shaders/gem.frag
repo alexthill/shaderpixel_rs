@@ -133,12 +133,12 @@ float sdfCustomGem(vec3 p){
 float sdfMap(vec3 pos)
 {
     pos.zx *= rot2D(ubo.time * rotationSpeed);
-    pos.y += sin(ubo.time * rotationSpeed * 2.0) * 0.25;
+    pos.y += sin(ubo.time * rotationSpeed * 2.0) * 0.15;
     if (gemType == 0)
         return sdfCustomGem(pos);
     vec3 p = pos;
     float offset = 3.5; 
-    float scale = 0.2;
+    float scale = 0.15;
 
     float s1 = sdfOctahedron(p, 5. * scale);
 
