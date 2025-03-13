@@ -2,7 +2,7 @@ use crate::model::obj::NormalizedObj;
 use crate::vulkan::HotShader;
 
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use egui::Color32;
 use glam::{Mat4, Vec4};
@@ -10,12 +10,52 @@ use glam::{Mat4, Vec4};
 pub struct ArtObject {
     pub name: String,
     pub model: Arc<NormalizedObj>,
-    pub matrix: Mat4,
     pub shader_vert: Arc<HotShader>,
     pub shader_frag: Arc<HotShader>,
     pub texture: Option<PathBuf>,
     pub options: Vec<ArtOption>,
-    pub option_values: Option<Arc<RwLock<Vec4>>>,
+    pub data: ArtData,
+    pub fn_update_data: Option<Box<dyn Fn(&mut ArtData, &ArtUpdateData)>>,
+}
+
+#[derive(Debug, Default)]
+pub struct ArtUpdateData {
+    pub skybox_rotation_angle: f32,
+}
+
+#[derive(Debug, Default)]
+pub struct ArtData {
+    matrix: Mat4,
+    option_values: Option<Vec4>,
+}
+
+impl ArtData {
+    pub fn new(matrix: Mat4) -> Self {
+        Self {
+            matrix,
+            ..Default::default()
+        }
+    }
+
+    pub fn get_matrix(&self) -> Mat4 {
+        self.matrix
+    }
+
+    pub fn set_matrix(&mut self, matrix: Mat4) {
+        self.matrix = matrix
+    }
+
+    pub fn get_options(&self) -> Option<Vec4> {
+        self.option_values
+    }
+
+    pub fn set_options(&mut self, options: Option<Vec4>) {
+        self.option_values = options;
+    }
+
+    pub fn get_options_mut(&mut self) -> Option<&mut Vec4> {
+        self.option_values.as_mut()
+    }
 }
 
 pub enum ArtOptionType {

@@ -1,3 +1,4 @@
+use crate::art::ArtData;
 use super::{
     helpers::{fs, vs},
     shader::HotShader,
@@ -5,7 +6,7 @@ use super::{
     vertex::VertexPos,
 };
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::Context;
 use glam::{Mat4, Vec4};
@@ -41,8 +42,6 @@ use vulkano::{
 
 pub struct MyPipeline {
     name: String,
-    model_matrix: Mat4,
-    option_values: Option<Arc<RwLock<Vec4>>>,
     texture: Option<Texture>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
@@ -58,8 +57,6 @@ impl MyPipeline {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
-        model_matrix: Mat4,
-        option_values: Option<Arc<RwLock<Vec4>>>,
         texture: Option<Texture>,
         device: Arc<Device>,
         vertex_buffer: Subbuffer<[VertexPos]>,
@@ -87,8 +84,6 @@ impl MyPipeline {
 
         let mut pipeline = Self {
             name,
-            model_matrix,
-            option_values,
             texture,
             pipeline: None,
             descriptor_sets: None,
@@ -143,22 +138,23 @@ impl MyPipeline {
         view: Mat4,
         proj: Mat4,
         time: f32,
+        data: Option<&ArtData>,
     ) -> anyhow::Result<()> {
+        let model = data.map(|data| data.get_matrix()).unwrap_or(Mat4::IDENTITY);
         *self.uniform_buffers_vert[idx].write()? = vs::UniformBufferObject {
-            model: self.model_matrix.to_cols_array_2d(),
+            model: model.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             proj: proj.to_cols_array_2d(),
         };
-        let options = match &self.option_values {
-            Some(option_values) => option_values.read()
-                .map_err(|_| anyhow::anyhow!("Lock poisoned"))?
-                .to_array(),
-            None => [0.; 4],
-        };
+
+        let options = data.and_then(|data| data.get_options())
+            .unwrap_or(Vec4::splat(0.))
+            .to_array();
         *self.uniform_buffers_frag[idx].write()? = fs::UniformBufferObject {
             options,
             time,
         };
+
         Ok(())
     }
 

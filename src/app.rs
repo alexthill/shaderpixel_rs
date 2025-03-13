@@ -1,6 +1,6 @@
 use crate::{
-    art::ArtObject,
-    gui::State,
+    art::{ArtObject, ArtUpdateData},
+    gui::GuiState,
     model::{
         env_generator::default_env,
     },
@@ -63,7 +63,7 @@ pub struct App {
     pub art_objects: Vec<ArtObject>,
     app: Option<(Arc<Window>, VkApp, Gui)>,
     swapchain_dirty: bool,
-    state: State,
+    gui_state: GuiState,
     /// Time passed since app start in fractional seconds.
     time: f32,
     /// Information about frame timing.
@@ -80,6 +80,7 @@ pub struct App {
     cursor_delta: [i32; 2],
     /// Whether the application is in fullscreen or not.
     is_fullscreen: bool,
+    skybox_rotation_angle: f32,
 }
 
 impl App {
@@ -101,7 +102,7 @@ impl App {
             GuiConfig::default(),
         );
 
-        self.state.options.present_modes = vk_app.get_surface_present_modes()?;
+        self.gui_state.options.present_modes = vk_app.get_surface_present_modes()?;
         self.app = Some((window, vk_app, gui));
         self.swapchain_dirty = true;
         self.camera.position = START_POSITION;
@@ -167,7 +168,7 @@ impl ApplicationHandler for App {
                         }
                         self.is_fullscreen = !self.is_fullscreen;
                     }
-                    KeyCode::F2 if pressed => self.state.toggle_open(),
+                    KeyCode::F2 if pressed => self.gui_state.toggle_open(),
                     _ => {}
                 }
                 match (logical_key.as_ref(), pressed) {
@@ -224,12 +225,12 @@ impl ApplicationHandler for App {
 
         // recreate swapchain if needed
         let extent = window.inner_size();
-        if self.swapchain_dirty || self.state.options.recreate_swapchain {
+        if self.swapchain_dirty || self.gui_state.options.recreate_swapchain {
             if extent.width == 0 || extent.height == 0 {
                 return;
             }
-            self.state.options.recreate_swapchain = false;
-            if let Err(err) = vk_app.recreate_swapchain(extent, &self.state.options) {
+            self.gui_state.options.recreate_swapchain = false;
+            if let Err(err) = vk_app.recreate_swapchain(extent, &self.gui_state.options) {
                 log::error!("error while recreating swapchain, exiting: {err:?}");
                 event_loop.exit();
                 return;
@@ -237,32 +238,49 @@ impl ApplicationHandler for App {
         }
 
         // setup nearest_art options
-        let mut nearest_art = self.art_objects.iter_mut().min_by(|a, b| {
-            let pos_a = a.matrix.transform_point3(Vec3::splat(0.));
-            let dist_a = self.camera.position.distance_squared(pos_a);
-            let pos_b = b.matrix.transform_point3(Vec3::splat(0.));
-            let dist_b = self.camera.position.distance_squared(pos_b);
-            dist_a.total_cmp(&dist_b)
-        });
+        let mut nearest_art = self.art_objects.iter_mut()
+            .filter(|a| !a.options.is_empty())
+            .min_by(|a, b| {
+                let pos_a = a.data.get_matrix().transform_point3(Vec3::splat(0.));
+                let dist_a = self.camera.position.distance_squared(pos_a);
+                let pos_b = b.data.get_matrix().transform_point3(Vec3::splat(0.));
+                let dist_b = self.camera.position.distance_squared(pos_b);
+                dist_a.total_cmp(&dist_b)
+            });
         if let Some(art) = nearest_art.as_mut() {
-            let pos = art.matrix.transform_point3(Vec3::splat(0.));
+            let pos = art.data.get_matrix().transform_point3(Vec3::splat(0.));
             let dist = self.camera.position.distance_squared(pos);
-            if dist > 2. {
+            if dist > 2. || art.options.is_empty() {
                 nearest_art = None;
-            } else if let Some(option_values) = art.option_values.as_mut() {
+            }
+        }
+
+        // render gui
+        self.gui_state.render(gui, &mut nearest_art, elapsed_dur);
+
+        // update options data for nearest_art
+        if let Some(art) = nearest_art.as_mut() {
+            if let Some(option_values) = art.data.get_options_mut() {
                 let mut values = [0.; 4];
                 let mut i = 0;
                 for option in art.options.iter() {
                     option.ty.save_value(&mut values, &mut i);
                 }
-                if let Ok(mut option_values) = option_values.write() {
-                    *option_values = values.into();
-                }
+                *option_values = values.into();
             }
         }
 
-        // render gui
-        self.state.render(gui, nearest_art, elapsed_dur);
+        // update data for all art
+        if self.gui_state.options.sun_movement {
+            self.skybox_rotation_angle += elapsed * self.gui_state.options.sun_speed;
+        }
+        for art in self.art_objects.iter_mut() {
+            if let Some(fn_update_data) = art.fn_update_data.as_ref() {
+                fn_update_data(&mut art.data, &ArtUpdateData {
+                    skybox_rotation_angle: self.skybox_rotation_angle,
+                });
+            }
+        }
 
         // update position
         let delta = elapsed * (self.scroll_lines * 0.4).exp();
@@ -295,7 +313,7 @@ impl ApplicationHandler for App {
             * Mat4::from_translation(-self.camera.position);
 
         // draw and remember if swapchain is dirty
-        self.swapchain_dirty = match vk_app.draw(self.time, Some(gui)) {
+        self.swapchain_dirty = match vk_app.draw(self.time, Some(gui), &self.art_objects) {
             Ok(swapchain_dirty) => swapchain_dirty,
             Err(err) => {
                 log::error!("error while drawing, exiting: {err:?}");

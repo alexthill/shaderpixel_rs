@@ -17,10 +17,13 @@ pub struct Options {
     pub present_modes: Vec<PresentMode>,
     pub present_mode: PresentMode,
     theme: Theme,
+    pub sun_movement: bool,
+    /// Speed of sun in radians per second.
+    pub sun_speed: f32,
 }
 
 #[derive(Debug, Clone)]
-pub struct State {
+pub struct GuiState {
     id_fps: Id,
     id_art_options: Id,
     open: bool,
@@ -31,11 +34,11 @@ pub struct State {
     pub options: Options,
 }
 
-impl State {
+impl GuiState {
     pub fn render(
         &mut self,
         gui: &mut Gui,
-        art: Option<&mut ArtObject>,
+        art: &mut Option<&mut ArtObject>,
         time: Option<Duration>,
     ) {
         let total_time = if let Some(time) = time {
@@ -207,6 +210,22 @@ impl State {
                 }
             });
         ui.end_row();
+
+        ui.label("Sun movement").on_hover_ui(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Toggle movement of the sun across the sky.");
+            });
+        });
+        ui.checkbox(&mut state.sun_movement, "enable");
+        ui.end_row();
+
+        ui.label("Sun speed").on_hover_ui(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Change the speed of the sun across the sky (in radians per second.");
+            });
+        });
+        ui.add(egui::Slider::new(&mut state.sun_speed, 0.0..=10.0));
+        ui.end_row();
     }
 
     fn draw_fps_chart(ui: &mut Ui, frame_timings: &VecDeque<Duration>) {
@@ -266,7 +285,7 @@ impl State {
     }
 }
 
-impl Default for State {
+impl Default for GuiState {
     fn default() -> Self {
         Self {
             id_fps: Id::new("fps indicator"),
@@ -281,6 +300,8 @@ impl Default for State {
                 present_modes: Vec::new(),
                 present_mode: PresentMode::Fifo,
                 theme: Theme::Dark,
+                sun_movement: true,
+                sun_speed: 0.2,
             },
         }
     }

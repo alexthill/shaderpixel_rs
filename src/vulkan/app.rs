@@ -236,8 +236,6 @@ impl App {
 
         let pipeline_main = MyPipeline::new(
             "main".to_owned(),
-            Mat4::IDENTITY,
-            None,
             None,
             device.clone(),
             vertex_buffer,
@@ -284,8 +282,6 @@ impl App {
             };
             let pipeline = MyPipeline::new(
                 art_obj.name.clone(),
-                art_obj.matrix,
-                art_obj.option_values.as_ref().map(|v| Arc::clone(v)),
                 texture,
                 device.clone(),
                 vertex_buffer,
@@ -393,6 +389,7 @@ impl App {
         &mut self,
         time: f32,
         gui: Option<&mut Gui>,
+        art_objs: &[ArtObject],
     ) -> anyhow::Result<bool> {
         let mut pipeline_changed = false;
         for pipeline in self.pipelines[1..].iter_mut() {
@@ -451,7 +448,7 @@ impl App {
             Some(fence) => fence.boxed(),
         };
 
-        self.update_uniform_buffer(image_i, time);
+        self.update_uniform_buffer(image_i, time, art_objs);
 
         let mut subpasses = vec![self.command_buffers[image_i].clone()];
         if let Some(gui) = gui {
@@ -495,7 +492,7 @@ impl App {
         Ok(swapchain_dirty)
     }
 
-    fn update_uniform_buffer(&self, image_index: usize, time: f32) {
+    fn update_uniform_buffer(&self, image_idx: usize, time: f32, art_objs: &[ArtObject]) {
         let aspect_ratio = self.swapchain.image_extent()[0] as f32
             / self.swapchain.image_extent()[1] as f32;
         let proj = Mat4::perspective_rh(
@@ -504,8 +501,14 @@ impl App {
             0.01,
             200.0,
         );
-        for pipeline in self.pipelines.iter() {
-            if let Err(err) = pipeline.update_uniform_buffer(image_index, self.view_matrix, proj, time) {
+        for (i, pipeline) in self.pipelines.iter().enumerate() {
+            let data = if i == 0 {
+                None
+            } else {
+                Some(&art_objs[i - 1].data)
+            };
+            let res = pipeline.update_uniform_buffer(image_idx, self.view_matrix, proj, time, data);
+            if let Err(err) = res {
                 log::error!("failed to update uniforms: {err:?}");
             }
         }
