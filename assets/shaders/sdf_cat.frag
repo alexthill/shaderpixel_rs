@@ -1,17 +1,13 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#include "includes/lightning.glsl"
 
 // SDF Cat by ejacquem <https://www.shadertoy.com/view/wcX3WN>
 
 #define PI 3.1415926535
 
 layout(location = 0) in vec3 fragPos;
-
-layout(set = 0, binding = 1) uniform UniformBufferObject {
-    vec4 light_pos;
-    vec4 options;
-    float time;
-} ubo;
+layout(location = 1) in vec3 fragNorm;
 
 layout(location = 0) out vec4 outColor;
 
@@ -154,5 +150,6 @@ void main() {
     cat = max(cat, eyes);
     float t = clamp(cat, 0.0, 1.0);
 
-    outColor = vec4(mix(shapeColor, backgroundColor, t), 1.0);
+    vec3 color  = mix(shapeColor, backgroundColor, t);
+    outColor = vec4(calc_lightning(color, fragPos, normalize(fragNorm)), 1.0);
 }

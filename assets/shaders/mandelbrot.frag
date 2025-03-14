@@ -1,9 +1,11 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#include "includes/lightning.glsl"
 
 #define LN2 0.6931471805599453
 
 layout(location = 0) in vec3 fragPos;
+layout(location = 1) in vec3 fragNorm;
 
 layout(location = 0) out vec4 outColor;
 
@@ -32,6 +34,7 @@ void main() {
         vec3 normVec = vec3(norm);
         color = sin(normVec - phase);
     }
+    color = color * 0.5 + 0.5;
 
-    outColor = vec4(color / 2.0 + 0.5, 1.0);
+    outColor = vec4(calc_lightning(color, fragPos, normalize(fragNorm)), 1.0);
 }

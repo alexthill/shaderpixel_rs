@@ -150,11 +150,12 @@ void moon(vec3 camera, vec3 dir, inout float d, inout vec4 color) {
 float hash(vec3 p) {
     p = fract(p * 0.3183099 + 0.1);
     p *= 17.0;
-    return fract(p.x*p.y*p.z * (p.x+p.y+p.z));
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
 }
 
 void stars(float dist, vec3 camera, vec3 dir, inout float d, inout vec4 color) {
-    vec3 p = (camera + dist * dir) * 50;
+    // add some random offsets to p because the hash function is symmetric
+    vec3 p = (camera + dist * dir) * 50 + vec3(0.0, 1.1, 2.2);
     vec3 p_int = round(p);
     float rand = hash(p_int);
     float is_star = step(0.9, rand) * (1.0 - smoothstep(0.05, 0.25, distance(p, p_int)));
