@@ -8,13 +8,14 @@ use std::{
 };
 
 use notify_debouncer_full::{new_debouncer, notify};
-use shaderc::{Compiler, CompileOptions, ShaderKind};
+use shaderc::{Compiler, CompileOptions, ResolvedInclude, ShaderKind};
 use vulkano::{
     device::Device,
     shader::{ShaderModule, ShaderModuleCreateInfo},
 };
 
 const DEBOUNCE_TIME: Duration = Duration::from_millis(500);
+const MAX_INCLUDE_DEPTH: usize = 16;
 
 static COMPILE_THREAD: LazyLock<mpsc::Sender<Arc<HotShader>>> = LazyLock::new(|| {
     let (tx, rx) = mpsc::channel::<Arc<HotShader>>();
@@ -214,12 +215,41 @@ impl HotShaderInner {
         log::debug!("compiling shader {} of kind {:?}", path.display(), kind);
         let start = Instant::now();
         let source = fs::read_to_string(path)?;
-        let compiler = Compiler::new().unwrap();
-        let options = CompileOptions::new().unwrap();
+        let compiler = Compiler::new()
+            .ok_or_else(|| anyhow::anyhow!("failed to get compiler"))?;
+        let mut options = CompileOptions::new()
+            .ok_or_else(|| anyhow::anyhow!("failed to get compile options"))?;
+        options.set_include_callback(|name, _ty, src, depth| {
+            // ty returns always IncludeType::Standard for some reason
+            // just ignore it and assume IncludeType::Relative
+            /*
+            if let IncludeType::Standard = ty {
+                return Err(r#"Standard includes (#include <...>) are not supported, please use relative includes (#include "...")."#.to_owned());
+            }
+            */
+
+            if depth > MAX_INCLUDE_DEPTH {
+                return Err(format!("Exceeded max include depth of {MAX_INCLUDE_DEPTH}."));
+            }
+
+            let path = Path::new(src);
+            let path = path.parent().unwrap_or(path).join(name);
+            let content = match std::fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(err) => {
+                    return Err(format!("Failed to read file {}: {err}", path.display()));
+                }
+            };
+            Ok(ResolvedInclude {
+                resolved_name: path.to_string_lossy().into_owned(),
+                content,
+            })
+        });
+
         let binary_result = compiler.compile_into_spirv(
             &source,
             kind,
-            path.to_str().unwrap_or("shader.glsl"),
+            &path.to_string_lossy(),
             "main",
             Some(&options)
         )?;
