@@ -5,17 +5,22 @@ use std::num::NonZeroU32;
 use glam::Vec3;
 
 pub fn default_env() -> Obj {
-    let podests = [
-        [-3., -1.], [2., -1.],
-        [-3., -6.], [2., -6.],
-    ];
     let walls = [
+        // big wall for images
         Wall { start: [6., -9.], end: [6.2, 0.], height: 3. },
+
+        /* currently replaced by some pillar shaders
+        // podests row left
+        Wall { start: [-3., -1.], end: [-2.,  0.], height: 1. },
+        Wall { start: [-3., -6.], end: [-2., -5.], height: 1. },
+        // podests row right
+        Wall { start: [ 2., -1.], end: [ 3.,  0.], height: 1. },
+        Wall { start: [ 2., -6.], end: [ 3., -5.], height: 1. },
+        */
     ];
     generate_env(
-        [-10.0, 0.0, -10.0],
-        [  8.2, 0.0,   4.2],
-        &podests,
+        [-10., 0., -10.],
+        [  8.2, 0.,   4.2],
         &walls,
     )
 }
@@ -26,6 +31,7 @@ fn add_surface(
     dir_x: Vec3,
     dir_y: Vec3,
     vertices: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
     faces: &mut Vec<([Indices; 3], Option<Indices>)>,
 ) {
     let vidx = vertices.len() as u32;
@@ -56,10 +62,20 @@ fn add_surface(
     }
 
     let w = dims[0] + 1 + (diff[0] > 0.) as u32;
+    let normal = {
+        let vertices: [Vec3; 3] = [vidx, vidx + w, vidx + 1].map(|vidx| {
+            vertices[vidx as usize].into()
+        });
+        let a = vertices[1] - vertices[0];
+        let b = vertices[2] - vertices[1];
+        let normal = a.cross(b).normalize().to_array();
+        normals.push(normal);
+        NonZeroU32::new(normals.len() as u32).unwrap()
+    };
     for y in 0..dims[1] + (diff[1] > 0.) as u32 {
         for x in 0..w - 1 {
             let vidx = vidx + x + y * w;
-            faces.push(indices_to_face([vidx, vidx + w, vidx + 1 + w, vidx + 1]));
+            faces.push(indices_to_face([vidx, vidx + w, vidx + 1 + w, vidx + 1], normal));
         }
     }
 }
@@ -67,11 +83,11 @@ fn add_surface(
 fn generate_env(
     floor_start: [f32; 3],
     floor_end: [f32; 3],
-    podests: &[[f32; 2]],
     walls: &[Wall],
 ) -> Obj {
     let mut vertices = Vec::new();
     let mut faces = Vec::new();
+    let mut normals = Vec::new();
     let tex_coords = Vec::new();
 
     // the floor
@@ -81,73 +97,78 @@ fn generate_env(
         [1., 0., 0.].into(),
         [0., 0., 1.].into(),
         &mut vertices,
+        &mut normals,
         &mut faces,
     );
 
-    // the podests
-    // for podest in podests {
-    //     let vidx = vertices.len() as u32;
-    //     for z in 0..2 {
-    //         for x in 0..2 {
-    //             vertices.push([podest[0] + x as f32, 0., podest[1] + z as f32]);
-    //             vertices.push([podest[0] + x as f32, 1., podest[1] + z as f32]);
-    //         }
-    //     }
-    //     faces.push(indices_to_face([vidx + 1, vidx + 5, vidx + 7, vidx + 3]));
-    //     faces.push(indices_to_face([vidx    , vidx + 1, vidx + 3, vidx + 2]));
-    //     faces.push(indices_to_face([vidx + 2, vidx + 3, vidx + 7, vidx + 6]));
-    //     faces.push(indices_to_face([vidx + 6, vidx + 7, vidx + 5, vidx + 4]));
-    //     faces.push(indices_to_face([vidx + 4, vidx + 5, vidx + 1, vidx    ]));
-    // }
-
     // the walls
     for wall in walls {
+        // -z side
         add_surface(
-            [wall.start[0],         0.0, wall.start[1]].into(),
+            [wall.start[0],          0., wall.start[1]].into(),
             [  wall.end[0], wall.height, wall.start[1]].into(),
             [1., 0., 0.].into(),
             [0., 1., 0.].into(),
             &mut vertices,
+            &mut normals,
             &mut faces,
         );
+        // +x side
         add_surface(
-            [  wall.end[0],         0.0, wall.start[1]].into(),
+            [  wall.end[0],          0., wall.start[1]].into(),
             [  wall.end[0], wall.height,   wall.end[1]].into(),
             [0., 0., 1.].into(),
             [0., 1., 0.].into(),
             &mut vertices,
+            &mut normals,
             &mut faces,
         );
+        // +z side
         add_surface(
-            [  wall.end[0],         0.0,   wall.end[1]].into(),
+            [  wall.end[0],          0.,   wall.end[1]].into(),
             [wall.start[0], wall.height,   wall.end[1]].into(),
             [-1., 0., 0.].into(),
             [ 0., 1., 0.].into(),
             &mut vertices,
+            &mut normals,
             &mut faces,
         );
+        // -x side
         add_surface(
-            [wall.start[0],         0.0,   wall.end[1]].into(),
+            [wall.start[0],         0.,   wall.end[1]].into(),
             [wall.start[0], wall.height, wall.start[1]].into(),
             [0., 0., -1.].into(),
             [0., 1.,  0.].into(),
             &mut vertices,
+            &mut normals,
+            &mut faces,
+        );
+        // +y side
+        add_surface(
+            [  wall.start[0], wall.height, wall.start[1]].into(),
+            [    wall.end[0], wall.height,   wall.end[1]].into(),
+            [1., 0., 0.].into(),
+            [0., 0., 1.].into(),
+            &mut vertices,
+            &mut normals,
             &mut faces,
         );
     }
 
-    Obj { vertices, tex_coords, faces }
+    Obj { vertices, tex_coords, normals, faces }
 }
 
-fn indices_to_face(indices: [u32; 4]) -> ([Indices; 3], Option<Indices>) {
+
+fn indices_to_face(indices: [u32; 4], normal: NonZeroU32) -> ([Indices; 3], Option<Indices>) {
+    let normal = Some(normal);
     let [a, b, c, d] = indices.map(|i| NonZeroU32::new(i + 1).unwrap());
     (
         [
-            Indices { vertex: a, texture: None, normal: None },
-            Indices { vertex: b, texture: None, normal: None },
-            Indices { vertex: c, texture: None, normal: None },
+            Indices { vertex: a, texture: None, normal },
+            Indices { vertex: b, texture: None, normal },
+            Indices { vertex: c, texture: None, normal },
         ],
-        Some(Indices { vertex: d, texture: None, normal: None }),
+        Some(Indices { vertex: d, texture: None, normal }),
     )
 }
 

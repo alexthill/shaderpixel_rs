@@ -3,7 +3,6 @@ use super::{
     helpers::{fs, vs},
     shader::HotShader,
     texture::Texture,
-    vertex::VertexPos,
 };
 
 use std::sync::Arc;
@@ -29,7 +28,7 @@ use vulkano::{
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::{CullMode, RasterizationState},
-            vertex_input::{Vertex, VertexDefinition},
+            vertex_input::{Vertex, VertexDefinition, VertexInputState},
             viewport::{Viewport, ViewportState},
             GraphicsPipelineCreateInfo,
         },
@@ -37,7 +36,7 @@ use vulkano::{
         GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
     },
     render_pass::{RenderPass, Subpass},
-    shader::ShaderModule,
+    shader::EntryPoint,
 };
 
 pub struct MyPipeline {
@@ -45,7 +44,7 @@ pub struct MyPipeline {
     texture: Option<Texture>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
-    vertex_buffer: Subbuffer<[VertexPos]>,
+    vertex_buffer: Subbuffer<[u8]>,
     index_buffer: Subbuffer<[u32]>,
     uniform_buffers_vert: Vec<Subbuffer<vs::UniformBufferObject>>,
     uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
@@ -55,11 +54,11 @@ pub struct MyPipeline {
 
 impl MyPipeline {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn new<V: Vertex>(
         name: String,
         texture: Option<Texture>,
         device: Arc<Device>,
-        vertex_buffer: Subbuffer<[VertexPos]>,
+        vertex_buffer: Subbuffer<[V]>,
         index_buffer: Subbuffer<[u32]>,
         vs: Arc<HotShader>,
         fs: Arc<HotShader>,
@@ -87,14 +86,14 @@ impl MyPipeline {
             texture,
             pipeline: None,
             descriptor_sets: None,
-            vertex_buffer,
+            vertex_buffer: vertex_buffer.into_bytes(),
             index_buffer,
             uniform_buffers_vert,
             uniform_buffers_frag,
             vs,
             fs,
         };
-        pipeline.update_pipeline(
+        pipeline.update_pipeline::<V>(
             device,
             render_pass,
             viewport,
@@ -111,7 +110,7 @@ impl MyPipeline {
         self.descriptor_sets.as_deref()
     }
 
-    pub fn get_vertex_buffer(&self) -> &Subbuffer<[VertexPos]> {
+    pub fn get_vertex_buffer(&self) -> &Subbuffer<[u8]> {
         &self.vertex_buffer
     }
 
@@ -138,7 +137,7 @@ impl MyPipeline {
         view: Mat4,
         proj: Mat4,
         time: f32,
-        data: Option<&ArtData>,
+        data: Option<ArtData>,
     ) -> anyhow::Result<()> {
         let model = data.map(|data| data.matrix).unwrap_or(Mat4::IDENTITY);
         *self.uniform_buffers_vert[idx].write()? = vs::UniformBufferObject {
@@ -159,7 +158,7 @@ impl MyPipeline {
         Ok(())
     }
 
-    pub fn update_pipeline(
+    pub fn update_pipeline<V: Vertex>(
         &mut self,
         device: Arc<Device>,
         render_pass: Arc<RenderPass>,
@@ -171,10 +170,14 @@ impl MyPipeline {
 
         if let (Some(vs), Some(fs)) = (vs_module, fs_module) {
             log::debug!("updating pipeline {}", self.name);
+            let vs_entry = vs.entry_point("main").ok_or_else(|| anyhow::anyhow!("no entrypoint"))?;
+            let fs_entry = fs.entry_point("main").ok_or_else(|| anyhow::anyhow!("no entrypoint"))?;
+            let vertex_input_state = V::per_vertex().definition(&vs_entry)?;
             let pipeline = Self::create_pipeline(
                 device,
-                vs.clone(),
-                fs.clone(),
+                vertex_input_state,
+                vs_entry,
+                fs_entry,
                 render_pass,
                 viewport
             )?;
@@ -235,19 +238,15 @@ impl MyPipeline {
 
     fn create_pipeline(
         device: Arc<Device>,
-        vs: Arc<ShaderModule>,
-        fs: Arc<ShaderModule>,
+        vertex_input_state: VertexInputState,
+        vs_entry: EntryPoint,
+        fs_entry: EntryPoint,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
     ) -> anyhow::Result<Arc<GraphicsPipeline>> {
-        let vs = vs.entry_point("main").unwrap();
-        let fs = fs.entry_point("main").unwrap();
-
-        let vertex_input_state = VertexPos::per_vertex().definition(&vs).unwrap();
-
         let stages = [
-            PipelineShaderStageCreateInfo::new(vs),
-            PipelineShaderStageCreateInfo::new(fs),
+            PipelineShaderStageCreateInfo::new(vs_entry),
+            PipelineShaderStageCreateInfo::new(fs_entry),
         ];
 
         let layout = PipelineLayout::new(

@@ -23,7 +23,7 @@ pub struct ArtUpdateData {
     pub skybox_rotation_angle: f32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct ArtData {
     pub matrix: Mat4,
     pub light_pos: Vec4,

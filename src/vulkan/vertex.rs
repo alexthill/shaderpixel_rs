@@ -3,8 +3,8 @@ use vulkano::{
     pipeline::graphics::vertex_input::Vertex,
 };
 
-pub trait MyVertexTrait: BufferContents {
-    fn new(pos: [f32; 3], norm: [f32; 3], coords: [f32; 2]) -> Self;
+pub trait MyVertexTrait: BufferContents + Vertex {
+    fn new(position: [f32; 3], coords: [f32; 2], normal: [f32; 3]) -> Self;
 }
 
 #[derive(Debug, Default, Clone, Copy, BufferContents, Vertex)]
@@ -15,7 +15,22 @@ pub struct VertexPos {
 }
 
 impl MyVertexTrait for VertexPos {
-    fn new(pos: [f32; 3], _: [f32; 3], _: [f32; 2]) -> Self {
-        Self { position: pos }
+    fn new(position: [f32; 3], _: [f32; 2], _: [f32; 3]) -> Self {
+        Self { position }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, BufferContents, Vertex)]
+#[repr(C)]
+pub struct VertexNorm {
+    #[format(R32G32B32_SFLOAT)]
+    pub position: [f32; 3],
+    #[format(R32G32B32_SFLOAT)]
+    pub normal: [f32; 3],
+}
+
+impl MyVertexTrait for VertexNorm {
+    fn new(position: [f32; 3], _: [f32; 2], normal: [f32; 3]) -> Self {
+        Self { position, normal }
     }
 }

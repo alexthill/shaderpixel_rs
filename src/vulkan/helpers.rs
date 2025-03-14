@@ -39,6 +39,7 @@ pub mod vs {
             #version 450
 
             layout(location = 0) in vec3 position;
+            layout(location = 1) in vec3 normal;
 
             layout(set = 0, binding = 0) uniform UniformBufferObject {
                 mat4 model;
@@ -46,7 +47,15 @@ pub mod vs {
                 mat4 proj;
             } ubo;
 
+            layout(location = 0) out vec3 fragPos;
+            layout(location = 1) out vec3 fragNorm;
+
             void main() {
+                fragPos = (ubo.model * vec4(position, 1.0)).xyz;
+
+                mat3 norm_matrix = transpose(inverse(mat3(ubo.model)));
+                fragNorm = normalize(norm_matrix * normal);
+
                 mat4 mvp = ubo.proj * ubo.view * ubo.model;
                 gl_Position = mvp * vec4(position, 1.0);
                 gl_Position.y = -gl_Position.y;
@@ -61,7 +70,10 @@ pub mod fs {
         src: r"
             #version 450
 
-            layout(location = 0) out vec4 out_color;
+            layout(location = 0) in vec3 fragPos;
+            layout(location = 1) in vec3 fragNorm;
+
+            layout(location = 0) out vec4 outColor;
 
             // each element in an array takes up the same space as a whole vec4
             // use a vec4 as better alternative
@@ -81,15 +93,19 @@ pub mod fs {
             }
 
             void main() {
-                // this is needed to prevent ubo from getting optimized away
-                float time = ubo.time;
-
                 vec3 color = vec3(
                     random(vec2(gl_PrimitiveID, 1.1)),
                     random(vec2(gl_PrimitiveID, 2.2)),
                     random(vec2(gl_PrimitiveID, 3.3))
-                ) + vec3(sin(time) * 0.1);
-                out_color = vec4(color, 1.0);
+                );
+
+                vec3 normal = normalize(fragNorm);
+                vec3 to_light_dir = normalize(ubo.light_pos.xyz - fragPos);
+                float ambient_coef = 0.4;
+                float diffuse_coef = max(0.0, dot(normal, to_light_dir));
+                color = color * min(2.0, ambient_coef + diffuse_coef);
+
+                outColor = vec4(color, 1.0);
             }
         ",
     }
@@ -359,8 +375,7 @@ pub fn load_model<V: MyVertexTrait>(model: &NormalizedObj) -> (Vec<V>, &[u32], (
         } else {
             [vertex.pos_coords[2], vertex.pos_coords[1]]
         };
-        let norm = [0.; 3]; // TODO implement getting norm
-        V::new(vertex.pos_coords, norm, tex_coords)
+        V::new(vertex.pos_coords, tex_coords, vertex.normal)
     }).collect();
 
     (vertices, &model.indices, (min, max))

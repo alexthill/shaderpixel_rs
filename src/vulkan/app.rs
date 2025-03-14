@@ -1,5 +1,5 @@
 use crate::{
-    art::ArtObject,
+    art::{ArtData, ArtObject},
     model::obj::NormalizedObj,
 };
 use super::{
@@ -8,7 +8,7 @@ use super::{
     pipeline::MyPipeline,
     shader::{watch_shaders, HotShader},
     texture::Texture,
-    vertex::MyVertexTrait,
+    vertex::{MyVertexTrait, VertexNorm, VertexPos},
 };
 
 use std::sync::Arc;
@@ -195,7 +195,7 @@ impl App {
             msaa_sample_count,
         );
 
-        let (vertices, indices, _) = load_model(&model);
+        let (vertices, indices, _) = load_model::<VertexNorm>(&model);
         let (vertex_buffer, index_buffer) = model_to_buffers(
             &vertices,
             indices,
@@ -257,7 +257,7 @@ impl App {
         let mut pipelines = vec![pipeline_main];
         for art_obj in art_objs {
             let (vertices, indices, _) = load_model(&art_obj.model);
-            let (vertex_buffer, index_buffer) = model_to_buffers(
+            let (vertex_buffer, index_buffer) = model_to_buffers::<VertexPos>(
                 &vertices,
                 indices,
                 memory_allocator.clone(),
@@ -365,8 +365,14 @@ impl App {
         );
 
         self.viewport.extent = dimensions.into();
-        for pipeline in self.pipelines.iter_mut() {
-            pipeline.update_pipeline(
+        self.pipelines[0].update_pipeline::<VertexNorm>(
+            self.device.clone(),
+            self.render_pass.clone(),
+            self.viewport.clone(),
+            self.descriptor_set_allocator.clone(),
+        ).context("failed to update pipeline")?;
+        for pipeline in self.pipelines[1..].iter_mut() {
+            pipeline.update_pipeline::<VertexPos>(
                 self.device.clone(),
                 self.render_pass.clone(),
                 self.viewport.clone(),
@@ -396,7 +402,7 @@ impl App {
             if pipeline.has_changed() {
                 pipeline_changed = true;
             } else if pipeline.get_pipeline().is_none() {
-                pipeline.update_pipeline(
+                pipeline.update_pipeline::<VertexPos>(
                     self.device.clone(),
                     self.render_pass.clone(),
                     self.viewport.clone(),
@@ -503,9 +509,13 @@ impl App {
         );
         for (i, pipeline) in self.pipelines.iter().enumerate() {
             let data = if i == 0 {
-                None
+                Some(ArtData {
+                    matrix: Mat4::IDENTITY,
+                    light_pos: art_objs[0].data.light_pos,
+                    option_values: None,
+                })
             } else {
-                Some(&art_objs[i - 1].data)
+                Some(art_objs[i - 1].data)
             };
             let res = pipeline.update_uniform_buffer(image_idx, self.view_matrix, proj, time, data);
             if let Err(err) = res {

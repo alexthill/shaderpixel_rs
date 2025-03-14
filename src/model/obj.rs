@@ -9,6 +9,7 @@ use std::str;
 pub struct Obj {
     pub vertices: Vec<[f32; 3]>,
     pub tex_coords: Vec<[f32; 2]>,
+    pub normals: Vec<[f32; 3]>,
     pub faces: Vec<([Indices; 3], Option<Indices>)>,
 }
 
@@ -43,6 +44,11 @@ impl Obj {
                 parts.next().map(|part| Self::parse_part::<_, 3>(3, Some(part))).transpose()?,
             )),
             b"v" => self.vertices.push([
+                Self::parse_part::<_, 3>(0, parts.next())?,
+                Self::parse_part::<_, 3>(1, parts.next())?,
+                Self::parse_part::<_, 3>(2, parts.next())?,
+            ]),
+            b"vn" => self.normals.push([
                 Self::parse_part::<_, 3>(0, parts.next())?,
                 Self::parse_part::<_, 3>(1, parts.next())?,
                 Self::parse_part::<_, 3>(2, parts.next())?,
@@ -86,7 +92,14 @@ impl Obj {
                     } else {
                         [0.; 2]
                     };
-                    nobj.vertices.push(Vertex { pos_coords, tex_coords });
+                    let normal = if let Some(normal_idx) = indices.normal {
+                        nobj.has_normals = true;
+                        *obj.normals.get(normal_idx.get() as usize - 1)
+                            .ok_or(ObjError::InvalidNormalIndex(normal_idx.into()))?
+                    } else {
+                        [0.; 3]
+                    };
+                    nobj.vertices.push(Vertex { pos_coords, tex_coords, normal });
                 }
                 Ok(vert_idx)
             }
@@ -125,6 +138,7 @@ pub struct NormalizedObj {
     pub indices: Vec<u32>,
     pub vertices: Vec<Vertex>,
     pub has_tex_coords: bool,
+    pub has_normals: bool,
 }
 
 impl NormalizedObj {
@@ -138,6 +152,7 @@ impl NormalizedObj {
 pub struct Vertex {
     pub pos_coords: [f32; 3],
     pub tex_coords: [f32; 2],
+    pub normal: [f32; 3],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -176,6 +191,7 @@ pub enum ObjError {
    InvalidIden(String),
    InvalidNum(String),
    InvalidTextureIndex(u32),
+   InvalidNormalIndex(u32),
    InvalidVertexIndex(u32),
    Io(io::Error),
    NotEnoughNums(u32, u32),
@@ -188,6 +204,7 @@ impl fmt::Display for ObjError {
             Self::InvalidIden(iden) => write!(f, "Invalid identifier at line start: {iden}"),
             Self::InvalidNum(num) => write!(f, "Invalid number: {num}"),
             Self::InvalidTextureIndex(idx) => write!(f, "Invalid texture index: {idx}"),
+            Self::InvalidNormalIndex(idx) => write!(f, "Invalid normal index: {idx}"),
             Self::InvalidVertexIndex(idx) => write!(f, "Invalid vertex index: {idx}"),
             Self::Io(err) => write!(f, "IO error: {err}"),
             Self::NotEnoughNums(found, expt) =>
@@ -258,7 +275,10 @@ v 3.1 3.2 3.3
 vt 0.1 0.2
 vt 0.3 0.4
 vt 0.5 0.6
-f 1/1 2/2 3/3
+vn 0.0 0.0 1.0
+vn 0.0 1.0 0.0
+vn 1.0 0.0 0.0
+f 1/1/3 2/2/2 3/3/1
 "#;
         let obj = Obj::from_reader(Cursor::new(file.as_bytes())).expect("failed to parse");
         assert_eq!(obj.vertices, [[1.1, 1.2, 1.3], [2.1, 2.2, 2.3], [3.1, 3.2, 3.3]]);
@@ -266,9 +286,9 @@ f 1/1 2/2 3/3
 
         let nobj = obj.normalize().expect("failed to normalize");
         assert_eq!(nobj.vertices, [
-            Vertex { pos_coords: [1.1, 1.2, 1.3], tex_coords: [0.1, 0.2] },
-            Vertex { pos_coords: [2.1, 2.2, 2.3], tex_coords: [0.3, 0.4] },
-            Vertex { pos_coords: [3.1, 3.2, 3.3], tex_coords: [0.5, 0.6] },
+            Vertex { pos_coords: [1.1, 1.2, 1.3], tex_coords: [0.1, 0.2], normal: [1., 0., 0.] },
+            Vertex { pos_coords: [2.1, 2.2, 2.3], tex_coords: [0.3, 0.4], normal: [0., 1., 0.] },
+            Vertex { pos_coords: [3.1, 3.2, 3.3], tex_coords: [0.5, 0.6], normal: [0., 0., 1.] },
         ]);
         assert_eq!(nobj.indices, [0, 1, 2]);
     }
@@ -292,12 +312,12 @@ f 2/1 1/2 3/4
 
         let nobj = obj.normalize().expect("failed to normalize");
         assert_eq!(nobj.vertices, [
-            Vertex { pos_coords: [1.1, 1.2, 1.3], tex_coords: [0.1, 0.2] },
-            Vertex { pos_coords: [2.1, 2.2, 2.3], tex_coords: [0.3, 0.4] },
-            Vertex { pos_coords: [3.1, 3.2, 3.3], tex_coords: [0.5, 0.6] },
-            Vertex { pos_coords: [2.1, 2.2, 2.3], tex_coords: [0.1, 0.2] },
-            Vertex { pos_coords: [1.1, 1.2, 1.3], tex_coords: [0.3, 0.4] },
-            Vertex { pos_coords: [3.1, 3.2, 3.3], tex_coords: [0.7, 0.8] },
+            Vertex { pos_coords: [1.1, 1.2, 1.3], tex_coords: [0.1, 0.2], normal: [0., 0., 0.] },
+            Vertex { pos_coords: [2.1, 2.2, 2.3], tex_coords: [0.3, 0.4], normal: [0., 0., 0.] },
+            Vertex { pos_coords: [3.1, 3.2, 3.3], tex_coords: [0.5, 0.6], normal: [0., 0., 0.] },
+            Vertex { pos_coords: [2.1, 2.2, 2.3], tex_coords: [0.1, 0.2], normal: [0., 0., 0.] },
+            Vertex { pos_coords: [1.1, 1.2, 1.3], tex_coords: [0.3, 0.4], normal: [0., 0., 0.] },
+            Vertex { pos_coords: [3.1, 3.2, 3.3], tex_coords: [0.7, 0.8], normal: [0., 0., 0.] },
         ]);
         assert_eq!(nobj.indices, [0, 1, 2, 3, 4, 5]);
     }
