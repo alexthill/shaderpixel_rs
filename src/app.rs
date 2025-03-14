@@ -238,22 +238,15 @@ impl ApplicationHandler for App {
         }
 
         // setup nearest_art options
-        let mut nearest_art = self.art_objects.iter_mut()
-            .filter(|a| !a.options.is_empty())
-            .min_by(|a, b| {
-                let pos_a = a.data.matrix.transform_point3(Vec3::splat(0.));
-                let dist_a = self.camera.position.distance_squared(pos_a);
-                let pos_b = b.data.matrix.transform_point3(Vec3::splat(0.));
-                let dist_b = self.camera.position.distance_squared(pos_b);
-                dist_a.total_cmp(&dist_b)
-            });
-        if let Some(art) = nearest_art.as_mut() {
-            let pos = art.data.matrix.transform_point3(Vec3::splat(0.));
-            let dist = self.camera.position.distance_squared(pos);
-            if dist > 2. || art.options.is_empty() {
-                nearest_art = None;
-            }
+        for art in self.art_objects.iter_mut() {
+            let dist = self.camera.position.distance_squared(art.position());
+            art.data.dist_to_camera = dist;
         }
+        let mut nearest_art = self.art_objects.iter_mut()
+            .filter(|a| !a.options.is_empty() && a.data.dist_to_camera <= 2.25)
+            .min_by(|a, b| {
+                a.data.dist_to_camera.total_cmp(&b.data.dist_to_camera)
+            });
 
         // render gui
         self.gui_state.render(gui, &mut nearest_art, elapsed_dur);

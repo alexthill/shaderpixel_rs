@@ -5,10 +5,11 @@ use crate::{
 use super::{
     debug::*,
     helpers::*,
+    geometry::Geometry,
     pipeline::MyPipeline,
     shader::{watch_shaders, HotShader},
     texture::Texture,
-    vertex::{MyVertexTrait, VertexNorm, VertexPos},
+    vertex::VertexType,
 };
 
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use glam::Mat4;
 use shaderc::ShaderKind;
 use vulkano::{
     buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::BufferUsage,
     command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
     command_buffer::SecondaryAutoCommandBuffer,
     descriptor_set::allocator::StandardDescriptorSetAllocator,
@@ -28,7 +29,7 @@ use vulkano::{
     image::{ImageUsage, SampleCount},
     instance::debug::DebugUtilsMessenger,
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
+    memory::allocator::{MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::graphics::viewport::Viewport,
     render_pass::{Framebuffer, RenderPass, Subpass},
     swapchain::{
@@ -197,13 +198,6 @@ impl App {
             msaa_sample_count,
         );
 
-        let (vertices, indices, _) = load_model::<VertexNorm>(&model);
-        let (vertex_buffer, index_buffer) = model_to_buffers(
-            &vertices,
-            indices,
-            memory_allocator.clone(),
-        );
-
         let vs = vs::load(device.clone()).expect("failed to create shader module");
         let fs = fs::load(device.clone()).expect("failed to create shader module");
 
@@ -236,12 +230,17 @@ impl App {
             },
         ));
 
+        let geometry = Geometry::from_model(
+            &model,
+            VertexType::VertexNorm,
+            memory_allocator.clone(),
+        ).expect("failed to parse model");
         let pipeline_main = MyPipeline::new(
             "main".to_owned(),
             None,
+            None,
             device.clone(),
-            vertex_buffer,
-            index_buffer,
+            geometry,
             Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
             Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
             render_pass.clone(),
@@ -257,13 +256,12 @@ impl App {
         watch_shaders(shader_iter);
 
         let mut pipelines = vec![pipeline_main];
-        for art_obj in art_objs {
-            let (vertices, indices, _) = load_model(&art_obj.model);
-            let (vertex_buffer, index_buffer) = model_to_buffers::<VertexPos>(
-                &vertices,
-                indices,
+        for (art_idx, art_obj) in art_objs.iter().enumerate() {
+            let geometry = Geometry::from_model(
+                &art_obj.model,
+                VertexType::VertexPos,
                 memory_allocator.clone(),
-            );
+            ).expect("failed to parse model");
             let texture = if let Some(path) = art_obj.texture.as_ref() {
                 let texture = Texture::new(
                     path,
@@ -284,10 +282,10 @@ impl App {
             };
             let pipeline = MyPipeline::new(
                 art_obj.name.clone(),
+                Some(art_idx),
                 texture,
                 device.clone(),
-                vertex_buffer,
-                index_buffer,
+                geometry,
                 Arc::clone(&art_obj.shader_vert),
                 Arc::clone(&art_obj.shader_frag),
                 render_pass.clone(),
@@ -367,14 +365,8 @@ impl App {
         );
 
         self.viewport.extent = dimensions.into();
-        self.pipelines[0].update_pipeline::<VertexNorm>(
-            self.device.clone(),
-            self.render_pass.clone(),
-            self.viewport.clone(),
-            self.descriptor_set_allocator.clone(),
-        ).context("failed to update pipeline")?;
-        for pipeline in self.pipelines[1..].iter_mut() {
-            pipeline.update_pipeline::<VertexPos>(
+        for pipeline in self.pipelines.iter_mut() {
+            pipeline.update_pipeline(
                 self.device.clone(),
                 self.render_pass.clone(),
                 self.viewport.clone(),
@@ -404,7 +396,7 @@ impl App {
             if pipeline.has_changed() {
                 pipeline_changed = true;
             } else if pipeline.get_pipeline().is_none() {
-                pipeline.update_pipeline::<VertexPos>(
+                pipeline.update_pipeline(
                     self.device.clone(),
                     self.render_pass.clone(),
                     self.viewport.clone(),
@@ -508,59 +500,20 @@ impl App {
             0.01,
             200.0,
         );
-        for (i, pipeline) in self.pipelines.iter().enumerate() {
-            let data = if i == 0 {
-                Some(ArtData {
+        for pipeline in self.pipelines.iter() {
+            let data = pipeline.get_art_idx().map(|idx| art_objs[idx].data).unwrap_or_else(|| {
+                ArtData {
+                    dist_to_camera: f32::MAX,
                     matrix: Mat4::IDENTITY,
                     light_pos: art_objs[0].data.light_pos,
                     option_values: None,
-                })
-            } else {
-                Some(art_objs[i - 1].data)
-            };
+                }
+            });
+            let data = Some(data);
             let res = pipeline.update_uniform_buffer(image_idx, self.view_matrix, proj, time, data);
             if let Err(err) = res {
                 log::error!("failed to update uniforms: {err:?}");
             }
         }
     }
-}
-
-pub fn model_to_buffers<V>(
-    vertices: &[V],
-    indices: &[u32],
-    memory_allocator: Arc<StandardMemoryAllocator>,
-) -> (Subbuffer<[V]>, Subbuffer<[u32]>)
-where
-    V: MyVertexTrait + Copy,
-{
-    let vertex_buffer = Buffer::from_iter(
-        memory_allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::VERTEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        vertices.iter().copied(),
-    ).unwrap();
-
-    let index_buffer = Buffer::from_iter(
-        memory_allocator.clone(),
-        BufferCreateInfo {
-            usage: BufferUsage::INDEX_BUFFER,
-            ..Default::default()
-        },
-        AllocationCreateInfo {
-            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ..Default::default()
-        },
-        indices.iter().copied(),
-    ).unwrap();
-
-    (vertex_buffer, index_buffer)
 }

@@ -7,6 +7,12 @@ pub trait MyVertexTrait: BufferContents + Vertex {
     fn new(position: [f32; 3], coords: [f32; 2], normal: [f32; 3]) -> Self;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VertexType {
+    VertexPos,
+    VertexNorm,
+}
+
 #[derive(Debug, Default, Clone, Copy, BufferContents, Vertex)]
 #[repr(C)]
 pub struct VertexPos {

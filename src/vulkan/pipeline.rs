@@ -1,5 +1,6 @@
 use crate::art::ArtData;
 use super::{
+    geometry::Geometry,
     helpers::{fs, vs},
     shader::HotShader,
     texture::Texture,
@@ -28,7 +29,7 @@ use vulkano::{
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::{CullMode, RasterizationState},
-            vertex_input::{Vertex, VertexDefinition, VertexInputState},
+            vertex_input::VertexInputState,
             viewport::{Viewport, ViewportState},
             GraphicsPipelineCreateInfo,
         },
@@ -41,11 +42,11 @@ use vulkano::{
 
 pub struct MyPipeline {
     name: String,
+    art_idx: Option<usize>,
     texture: Option<Texture>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
-    vertex_buffer: Subbuffer<[u8]>,
-    index_buffer: Subbuffer<[u32]>,
+    geometry: Geometry,
     uniform_buffers_vert: Vec<Subbuffer<vs::UniformBufferObject>>,
     uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
     vs: Arc<HotShader>,
@@ -54,12 +55,12 @@ pub struct MyPipeline {
 
 impl MyPipeline {
     #[allow(clippy::too_many_arguments)]
-    pub fn new<V: Vertex>(
+    pub fn new(
         name: String,
+        art_idx: Option<usize>,
         texture: Option<Texture>,
         device: Arc<Device>,
-        vertex_buffer: Subbuffer<[V]>,
-        index_buffer: Subbuffer<[u32]>,
+        geometry: Geometry,
         vs: Arc<HotShader>,
         fs: Arc<HotShader>,
         render_pass: Arc<RenderPass>,
@@ -83,17 +84,17 @@ impl MyPipeline {
 
         let mut pipeline = Self {
             name,
+            art_idx,
             texture,
             pipeline: None,
             descriptor_sets: None,
-            vertex_buffer: vertex_buffer.into_bytes(),
-            index_buffer,
+            geometry,
             uniform_buffers_vert,
             uniform_buffers_frag,
             vs,
             fs,
         };
-        pipeline.update_pipeline::<V>(
+        pipeline.update_pipeline(
             device,
             render_pass,
             viewport,
@@ -111,12 +112,14 @@ impl MyPipeline {
     }
 
     pub fn get_vertex_buffer(&self) -> &Subbuffer<[u8]> {
-        &self.vertex_buffer
+        self.geometry.vertex_buffer()
     }
 
     pub fn get_index_buffer(&self) -> &Subbuffer<[u32]> {
-        &self.index_buffer
+        self.geometry.index_buffer()
     }
+
+    pub fn get_art_idx(&self) -> Option<usize> { self.art_idx }
 
     pub fn has_changed(&self) -> bool {
         self.vs.has_changed() || self.fs.has_changed()
@@ -158,7 +161,7 @@ impl MyPipeline {
         Ok(())
     }
 
-    pub fn update_pipeline<V: Vertex>(
+    pub fn update_pipeline(
         &mut self,
         device: Arc<Device>,
         render_pass: Arc<RenderPass>,
@@ -172,10 +175,9 @@ impl MyPipeline {
             log::debug!("updating pipeline {}", self.name);
             let vs_entry = vs.entry_point("main").ok_or_else(|| anyhow::anyhow!("no entrypoint"))?;
             let fs_entry = fs.entry_point("main").ok_or_else(|| anyhow::anyhow!("no entrypoint"))?;
-            let vertex_input_state = V::per_vertex().definition(&vs_entry)?;
             let pipeline = Self::create_pipeline(
                 device,
-                vertex_input_state,
+                self.geometry.definition(&vs_entry)?,
                 vs_entry,
                 fs_entry,
                 render_pass,

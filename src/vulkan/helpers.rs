@@ -1,12 +1,7 @@
-use crate::model::obj::NormalizedObj;
-use super::{
-    pipeline::MyPipeline,
-    vertex::MyVertexTrait,
-};
+use super::pipeline::MyPipeline;
 
 use std::sync::Arc;
 
-use glam::Vec3;
 use vulkano::{
     command_buffer::{
         allocator::StandardCommandBufferAllocator,
@@ -358,25 +353,4 @@ pub fn find_depth_format(device: &PhysicalDevice) -> Option<Format> {
             ..Default::default()
         }).ok().is_some()
     })
-}
-
-pub fn load_model<V: MyVertexTrait>(model: &NormalizedObj) -> (Vec<V>, &[u32], (Vec3, Vec3)) {
-    let mut min = Vec3::splat(f32::MAX);
-    let mut max = Vec3::splat(f32::MIN);
-    for vertex in &model.vertices {
-        for (i, &coord) in vertex.pos_coords.iter().enumerate() {
-            min[i] = min[i].min(coord);
-            max[i] = max[i].max(coord);
-        }
-    }
-    let vertices = model.vertices.iter().map(|vertex| {
-        let tex_coords = if model.has_tex_coords {
-            vertex.tex_coords
-        } else {
-            [vertex.pos_coords[2], vertex.pos_coords[1]]
-        };
-        V::new(vertex.pos_coords, tex_coords, vertex.normal)
-    }).collect();
-
-    (vertices, &model.indices, (min, max))
 }

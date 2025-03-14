@@ -21,21 +21,19 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             model: model_square.clone(),
             shader_vert: shader_2d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbrot.frag")),
-            texture: None,
             options: vec![],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(90_f32.to_radians()),
                 [5.99, 1.5, -1.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
         ArtObject {
             name: "Sdf Cat".to_owned(),
             model: model_square.clone(),
             shader_vert: shader_2d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/sdf_cat.frag")),
-            texture: None,
             options: vec![
                 ArtOption::stroke("Color", 1., Color32::from_rgb(255, 76, 76)),
                 ArtOption::slider_f32("Speed", 1., 0., 10.),
@@ -45,15 +43,13 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 Quat::from_rotation_y(90_f32.to_radians()),
                 [5.99, 1.5, -4.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
         ArtObject {
             name: "Skybox".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/skybox.frag")),
-            texture: None,
-            options: vec![],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(100.),
                 Quat::from_rotation_y(0_f32.to_radians()),
@@ -66,80 +62,13 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                     [0., 0., 0.].into(),
                 );
             })),
+            ..Default::default()
         },
-
-        // ------------------ PILLAR  ------------------ 
-        // TODO find a better way to implement other than copy/pasting 
-
-        ArtObject {
-            name: "Pillar".to_owned(),
-            model: model_cube.clone(),
-            shader_vert: shader_3d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
-            texture: None,
-            options: vec![
-            ],
-            data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.499),
-                Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 0.5, -5.5].into(),
-            )),
-            fn_update_data: None,
-        },
-        ArtObject {
-            name: "Pillar".to_owned(),
-            model: model_cube.clone(),
-            shader_vert: shader_3d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
-            texture: None,
-            options: vec![
-            ],
-            data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.499),
-                Quat::from_rotation_y(0_f32.to_radians()),
-                [2.5, 0.5, -5.5].into(),
-            )),
-            fn_update_data: None,
-        },
-        ArtObject {
-            name: "Pillar".to_owned(),
-            model: model_cube.clone(),
-            shader_vert: shader_3d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
-            texture: None,
-            options: vec![
-            ],
-            data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.499),
-                Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 0.5, -0.5].into(),
-            )),
-            fn_update_data: None,
-        },
-        ArtObject {
-            name: "Pillar".to_owned(),
-            model: model_cube.clone(),
-            shader_vert: shader_3d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
-            texture: None,
-            options: vec![
-            ],
-            data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.499),
-                Quat::from_rotation_y(0_f32.to_radians()),
-                [2.5, 0.5, -0.5].into(),
-            )),
-            fn_update_data: None,
-        },
-
-
-        // ------------------ 3D Shader  ------------------ 
         ArtObject {
             name: "Mandelbox".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbox.frag")),
-            texture: None,
             options: vec![
                 ArtOption::slider_f32("Scale", 3., -5., 5.),
                 ArtOption::slider_i32("Iterations", 10, 1, 100),
@@ -150,14 +79,13 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 Quat::from_rotation_y(0_f32.to_radians()),
                 [-2.5, 1.5, -0.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
         ArtObject {
             name: "Menger Sponge".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mengersponge.frag")),
-            texture: None,
             options: vec![
                 ArtOption::slider_i32("Depth", 4, 1, 10),
                 ArtOption::checkbox("Shadows", true),
@@ -168,7 +96,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 Quat::from_rotation_y(0_f32.to_radians()),
                 [2.5, 1.5, -0.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
         ArtObject {
             name: "Solar System".to_owned(),
@@ -184,14 +112,13 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 Quat::from_rotation_y(0_f32.to_radians()),
                 [-2.5, 1.5, -5.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
         ArtObject {
             name: "Gem".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/gem.frag")),
-            texture: None,
             options: vec![
                 ArtOption::slider_i32("GemType", 1, 0, 1),
                 ArtOption::slider_i32("ColorIndex", 2, 0, 7),
@@ -202,24 +129,42 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 Quat::from_rotation_y(0_f32.to_radians()),
                 [2.5, 1.5, -5.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
         ArtObject {
             name: "Cloudy Cube".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/cloudycube.frag")),
-            texture: None,
-            options: vec![
-            ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
                 [2.5, 3.5, -5.5].into(),
             )),
-            fn_update_data: None,
+            ..Default::default()
         },
     ];
+
+    let pillars = [
+        [-2.5, 0.5, -5.5],
+        [2.5, 0.5, -5.5],
+        [-2.5, 0.5, -0.5],
+        [2.5, 0.5, -0.5],
+    ];
+    art_objects.extend(pillars.into_iter().enumerate().map(|(i, pillar_pos)| {
+        ArtObject {
+            name: format!("Pillar {i:2}"),
+            model: model_cube.clone(),
+            shader_vert: shader_3d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
+            data: ArtData::new(Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.499),
+                Quat::from_rotation_y(0_f32.to_radians()),
+                pillar_pos.into(),
+            )),
+            ..Default::default()
+        }
+    }));
 
     for art in art_objects.iter_mut() {
         if art.options.is_empty() {

@@ -200,6 +200,17 @@ impl HotShader {
     }
 }
 
+impl Default for HotShader {
+    fn default() -> Self {
+        Self {
+            path: Default::default(),
+            // this is just some arbitrary value that should never be used
+            shader_kind: ShaderKind::DefaultVertex,
+            inner: Default::default(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct HotShaderInner {
     device: Option<Arc<Device>>,

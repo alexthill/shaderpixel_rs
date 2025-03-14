@@ -5,8 +5,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use egui::Color32;
-use glam::{Mat4, Vec4};
+use glam::{Mat4, Vec3, Vec4};
 
+pub type UpdateFunction = dyn Fn(&mut ArtData, &ArtUpdateData);
+
+#[derive(Default)]
 pub struct ArtObject {
     pub name: String,
     pub model: Arc<NormalizedObj>,
@@ -15,7 +18,13 @@ pub struct ArtObject {
     pub texture: Option<PathBuf>,
     pub options: Vec<ArtOption>,
     pub data: ArtData,
-    pub fn_update_data: Option<Box<dyn Fn(&mut ArtData, &ArtUpdateData)>>,
+    pub fn_update_data: Option<Box<UpdateFunction>>,
+}
+
+impl ArtObject {
+    pub fn position(&self) -> Vec3 {
+        self.data.position()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -25,6 +34,7 @@ pub struct ArtUpdateData {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ArtData {
+    pub dist_to_camera: f32,
     pub matrix: Mat4,
     pub light_pos: Vec4,
     pub option_values: Option<Vec4>,
@@ -36,6 +46,10 @@ impl ArtData {
             matrix,
             ..Default::default()
         }
+    }
+
+    pub fn position(&self) -> Vec3 {
+        self.matrix.transform_point3(Vec3::splat(0.))
     }
 }
 
@@ -94,6 +108,6 @@ impl ArtOption {
     }
 
     pub fn label(&self) -> &str {
-        &self.label
+        self.label
     }
 }
