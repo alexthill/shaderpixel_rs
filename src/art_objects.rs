@@ -148,7 +148,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 1.51, -0.5].into(),
+                [-2.5, 1.5, -0.5].into(),
             )),
             fn_update_data: None,
         },
@@ -166,7 +166,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [2.5, 1.51, -0.5].into(),
+                [2.5, 1.5, -0.5].into(),
             )),
             fn_update_data: None,
         },
@@ -182,7 +182,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 1.51, -5.5].into(),
+                [-2.5, 1.5, -5.5].into(),
             )),
             fn_update_data: None,
         },
@@ -201,6 +201,21 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
                 [2.5, 1.5, -5.5].into(),
+            )),
+            fn_update_data: None,
+        },
+        ArtObject {
+            name: "Cloudy Cube".to_owned(),
+            model: model_cube.clone(),
+            shader_vert: shader_3d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/cloudycube.frag")),
+            texture: None,
+            options: vec![
+            ],
+            data: ArtData::new(Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.5),
+                Quat::from_rotation_y(0_f32.to_radians()),
+                [2.5, 3.5, -5.5].into(),
             )),
             fn_update_data: None,
         },
