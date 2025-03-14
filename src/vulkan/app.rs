@@ -45,6 +45,8 @@ use vulkano::{
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+const PREFFERED_IMAGE_COUNT: u32 = 3;
+
 pub struct App {
     pub view_matrix: Mat4,
 
@@ -152,7 +154,7 @@ impl App {
                 .surface_formats(&surface, Default::default())
                 .unwrap()[0]
                 .0;
-            let min_image_count = 3
+            let min_image_count = PREFFERED_IMAGE_COUNT
                 .min(caps.max_image_count.unwrap_or(u32::MAX))
                 .max(caps.min_image_count);
 
@@ -469,7 +471,6 @@ impl App {
 
         let future = previous_future
             .join(acquire_future)
-            //.then_execute(self.queue.clone(), self.command_buffers[image_i].clone())
             .then_execute(self.queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(

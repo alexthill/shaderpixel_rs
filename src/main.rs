@@ -11,7 +11,9 @@ use app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 fn main() {
-    env_logger::init();
+    env_logger::builder()
+        .format_timestamp(Some(env_logger::fmt::TimestampPrecision::Millis))
+        .init();
 
     let art_objects = match art_objects::get_art_objects() {
         Ok(art_objects) => art_objects,
