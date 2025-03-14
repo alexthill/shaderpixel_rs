@@ -98,7 +98,7 @@ float sdfMap(vec3 pos)
 
     p = pos - vec3(+0,0.1,0);
     d = sdRoundBox(p, vec3(+1,0.1,1), 0.02); // bottom
-    p = pos - vec3(+0,1.9,0);
+    p = pos - vec3(+0,1.955,0);
     d = min(d, sdRoundBox(p, vec3(+1,0.1,1), 0.02)); // top
 
     p = pos - vec3(+0,1.0,0);
