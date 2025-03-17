@@ -7,7 +7,7 @@ use glam::Vec3;
 pub fn default_env() -> Obj {
     let walls = [
         // big wall for images
-        Wall { start: [6., -9.], end: [6.2, 0.], height: 3. },
+        Wall { start: [6., -14.], end: [6.2, 0.], height: 3. },
 
         /* currently replaced by some pillar shaders
         // podests row left
@@ -19,8 +19,8 @@ pub fn default_env() -> Obj {
         */
     ];
     generate_env(
-        [-10., 0., -10.],
-        [  8.2, 0.,   4.2],
+        [-10.0, 0.0, -15.0],
+        [  8.2, 0.0,   4.2],
         &walls,
     )
 }

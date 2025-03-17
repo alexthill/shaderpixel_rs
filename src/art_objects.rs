@@ -96,7 +96,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [2.5, 1.5, -0.5].into(),
+                [-2.5, 1.5, -5.5].into(),
             )),
             ..Default::default()
         },
@@ -112,7 +112,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 1.5, -5.5].into(),
+                [2.5, 1.5, -10.5].into(),
             )),
             ..Default::default()
         },
@@ -129,7 +129,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [2.5, 1.5, -5.5].into(),
+                [2.5, 1.5, -0.5].into(),
             )),
             ..Default::default()
         },
@@ -141,17 +141,19 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [2.5, 3.5, -5.5].into(),
+                [2.5, 1.5, -5.5].into(),
             )),
             ..Default::default()
         },
     ];
 
     let pillars = [
-        [-2.5, 0.5, -5.5],
-        [2.5, 0.5, -5.5],
-        [-2.5, 0.5, -0.5],
-        [2.5, 0.5, -0.5],
+        [-2.5, 0.5, -10.5],
+        [ 2.5, 0.5, -10.5],
+        [-2.5, 0.5,  -5.5],
+        [ 2.5, 0.5,  -5.5],
+        [-2.5, 0.5,  -0.5],
+        [ 2.5, 0.5,  -0.5],
     ];
     art_objects.extend(pillars.into_iter().enumerate().map(|(i, pillar_pos)| {
         ArtObject {
@@ -160,7 +162,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             shader_vert: shader_3d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
             data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.499),
+                Vec3::new(0.53, 0.499, 0.53),
                 Quat::from_rotation_y(0_f32.to_radians()),
                 pillar_pos.into(),
             )),
