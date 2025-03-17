@@ -240,12 +240,12 @@ impl ApplicationHandler for App {
         // setup nearest_art options
         for art in self.art_objects.iter_mut() {
             let dist = self.camera.position.distance_squared(art.position());
-            art.data.dist_to_camera = dist;
+            art.data.dist_to_camera_sqr = dist;
         }
         let mut nearest_art = self.art_objects.iter_mut()
-            .filter(|a| !a.options.is_empty() && a.data.dist_to_camera <= 2.25)
+            .filter(|a| !a.options.is_empty() && a.data.dist_to_camera_sqr <= 2.25)
             .min_by(|a, b| {
-                a.data.dist_to_camera.total_cmp(&b.data.dist_to_camera)
+                a.data.dist_to_camera_sqr.total_cmp(&b.data.dist_to_camera_sqr)
             });
 
         // render gui

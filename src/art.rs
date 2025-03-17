@@ -34,7 +34,7 @@ pub struct ArtUpdateData {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ArtData {
-    pub dist_to_camera: f32,
+    pub dist_to_camera_sqr: f32,
     pub matrix: Mat4,
     pub light_pos: Vec4,
     pub option_values: Option<Vec4>,

@@ -296,6 +296,7 @@ pub fn get_command_buffers(
     command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
     queue: &Arc<Queue>,
     pipelines: &[MyPipeline],
+    pipeline_order: &[usize],
     render_pass: Arc<RenderPass>,
 ) -> Vec<Arc<SecondaryAutoCommandBuffer>> {
     let subpass = Subpass::from(render_pass, 0).unwrap();
@@ -310,7 +311,8 @@ pub fn get_command_buffers(
             },
         )
         .unwrap();
-        for my_pipeline in pipelines {
+        for &pip_idx in pipeline_order {
+            let my_pipeline = &pipelines[pip_idx];
             let Some(pipeline) = my_pipeline.get_pipeline() else {
                 continue;
             };

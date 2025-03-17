@@ -12,6 +12,7 @@ use super::{
     vertex::VertexType,
 };
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -69,6 +70,7 @@ pub struct App {
     fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     previous_fence_i: usize,
     pipelines: Vec<MyPipeline>,
+    pipeline_order: Vec<usize>,
 
     // If this falls out of scope then there will be no more debug events.
     // Put it at the end so that it gets dropped last.
@@ -296,12 +298,14 @@ impl App {
             ).unwrap();
             pipelines.push(pipeline);
         }
+        let pipeline_order = Self::get_pipeline_order(&pipelines, art_objs);
 
         let command_buffers = get_command_buffers(
             frames_in_flight,
             &command_buffer_allocator,
             &queue,
             &pipelines,
+            &pipeline_order,
             render_pass.clone(),
         );
 
@@ -323,6 +327,7 @@ impl App {
             fences: vec![None; frames_in_flight],
             previous_fence_i: 0,
             pipelines,
+            pipeline_order,
             _debug: debug,
         }
     }
@@ -373,13 +378,7 @@ impl App {
                 self.descriptor_set_allocator.clone(),
             ).context("failed to update pipeline")?;
         }
-        self.command_buffers = get_command_buffers(
-            self.fences.len(),
-            &self.command_buffer_allocator,
-            &self.queue,
-            &self.pipelines,
-            self.render_pass.clone(),
-        );
+        self.update_command_buffers();
 
         Ok(())
     }
@@ -410,13 +409,16 @@ impl App {
             for pipeline in self.pipelines[1..].iter_mut() {
                 pipeline.reload_shaders(false);
             }
-            self.command_buffers = get_command_buffers(
-                self.fences.len(),
-                &self.command_buffer_allocator,
-                &self.queue,
-                &self.pipelines,
-                self.render_pass.clone(),
-            );
+            self.update_command_buffers();
+        }
+
+        let new_order = Self::get_pipeline_order(&self.pipelines, art_objs);
+        if new_order != self.pipeline_order {
+            self.pipeline_order = new_order;
+            // if pipeline_changed command_buffers have already been updated
+            if !pipeline_changed {
+                self.update_command_buffers();
+            }
         }
 
         let (image_i, suboptimal, acquire_future) =
@@ -491,6 +493,23 @@ impl App {
         Ok(swapchain_dirty)
     }
 
+    fn get_pipeline_order(pipelines: &[MyPipeline], art_objs: &[ArtObject]) -> Vec<usize> {
+        let mut pipeline_order = (0..pipelines.len()).collect::<Vec<_>>();
+        pipeline_order.sort_unstable_by(|&a, &b| {
+            match (pipelines[a].get_art_idx(), pipelines[b].get_art_idx()) {
+                (Some(idx_a), Some(idx_b)) => {
+                    let a = &art_objs[idx_a];
+                    let b = &art_objs[idx_b];
+                    a.data.dist_to_camera_sqr.total_cmp(&b.data.dist_to_camera_sqr).reverse()
+                }
+                (Some(_), None) => return Ordering::Greater,
+                (None, Some(_)) => return Ordering::Less,
+                (None, None) => return Ordering::Equal,
+            }
+        });
+        pipeline_order
+    }
+
     fn update_uniform_buffer(&self, image_idx: usize, time: f32, art_objs: &[ArtObject]) {
         let aspect_ratio = self.swapchain.image_extent()[0] as f32
             / self.swapchain.image_extent()[1] as f32;
@@ -503,7 +522,7 @@ impl App {
         for pipeline in self.pipelines.iter() {
             let data = pipeline.get_art_idx().map(|idx| art_objs[idx].data).unwrap_or_else(|| {
                 ArtData {
-                    dist_to_camera: f32::MAX,
+                    dist_to_camera_sqr: f32::MAX,
                     matrix: Mat4::IDENTITY,
                     light_pos: art_objs[0].data.light_pos,
                     option_values: None,
@@ -515,5 +534,16 @@ impl App {
                 log::error!("failed to update uniforms: {err:?}");
             }
         }
+    }
+
+    fn update_command_buffers(&mut self) {
+        self.command_buffers = get_command_buffers(
+            self.fences.len(),
+            &self.command_buffer_allocator,
+            &self.queue,
+            &self.pipelines,
+            &self.pipeline_order,
+            Arc::clone(&self.render_pass),
+        );
     }
 }

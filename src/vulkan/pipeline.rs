@@ -103,6 +103,11 @@ impl MyPipeline {
         Ok(pipeline)
     }
 
+    #[allow(unused)]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn get_pipeline(&self) -> Option<&Arc<GraphicsPipeline>> {
         self.pipeline.as_ref()
     }

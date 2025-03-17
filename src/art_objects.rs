@@ -56,6 +56,8 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 [0., 0., 0.].into(),
             )),
             fn_update_data: Some(Box::new(|data, update| {
+                // draw before all other shaders
+                data.dist_to_camera_sqr = f32::MAX;
                 data.matrix = Mat4::from_scale_rotation_translation(
                     Vec3::splat(100.),
                     Quat::from_rotation_y(update.skybox_rotation_angle),
