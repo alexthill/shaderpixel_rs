@@ -313,9 +313,13 @@ pub fn get_command_buffers(
         .unwrap();
         for &pip_idx in pipeline_order {
             let my_pipeline = &pipelines[pip_idx];
+            if !my_pipeline.enable_pipeline {
+                continue;
+            }
             let Some(pipeline) = my_pipeline.get_pipeline() else {
                 continue;
             };
+
             let vertex_buffer = my_pipeline.get_vertex_buffer();
             let index_buffer = my_pipeline.get_index_buffer();
             builder

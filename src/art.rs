@@ -9,7 +9,6 @@ use glam::{Mat4, Vec3, Vec4};
 
 pub type UpdateFunction = dyn Fn(&mut ArtData, &ArtUpdateData);
 
-#[derive(Default)]
 pub struct ArtObject {
     pub name: String,
     pub model: Arc<NormalizedObj>,
@@ -19,11 +18,32 @@ pub struct ArtObject {
     pub options: Vec<ArtOption>,
     pub data: ArtData,
     pub fn_update_data: Option<Box<UpdateFunction>>,
+    pub enable_pipeline: bool,
+    pub enable_depth_test: bool,
+    pub container_scale: Vec3,
 }
 
 impl ArtObject {
     pub fn position(&self) -> Vec3 {
         self.data.position()
+    }
+}
+
+impl Default for ArtObject {
+    fn default() -> Self {
+        Self {
+            name: "unnamed".to_owned(),
+            model: Default::default(),
+            shader_vert: Default::default(),
+            shader_frag: Default::default(),
+            texture: Default::default(),
+            options: Default::default(),
+            data: Default::default(),
+            fn_update_data: Default::default(),
+            enable_pipeline: true,
+            enable_depth_test: true,
+            container_scale: Vec3::splat(1.),
+        }
     }
 }
 
@@ -37,7 +57,7 @@ pub struct ArtData {
     pub dist_to_camera_sqr: f32,
     pub matrix: Mat4,
     pub light_pos: Vec4,
-    pub option_values: Option<Vec4>,
+    pub option_values: Vec4,
 }
 
 impl ArtData {

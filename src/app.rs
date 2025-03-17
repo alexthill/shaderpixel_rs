@@ -36,7 +36,7 @@ struct FpsInfo {
 }
 
 #[derive(Default)]
-struct Camera{
+struct Camera {
     /// Camera yaw angle in radians.
     angle_yaw: f32,
     /// Camera pitch angle in radians.
@@ -253,14 +253,12 @@ impl ApplicationHandler for App {
 
         // update options data for nearest_art
         if let Some(art) = nearest_art.as_mut() {
-            if let Some(option_values) = art.data.option_values.as_mut() {
-                let mut values = [0.; 4];
-                let mut i = 0;
-                for option in art.options.iter() {
-                    option.ty.save_value(&mut values, &mut i);
-                }
-                *option_values = values.into();
+            let mut values = [0.; 4];
+            let mut i = 0;
+            for option in art.options.iter() {
+                option.ty.save_value(&mut values, &mut i);
             }
+            art.data.option_values = values.into();
         }
 
         // update data for all art
@@ -274,6 +272,9 @@ impl ApplicationHandler for App {
                 fn_update_data(&mut art.data, &ArtUpdateData {
                     skybox_rotation_angle: self.skybox_rotation_angle,
                 });
+            }
+            if art.name == "Portalbox" {
+                art.enable_pipeline = self.gui_state.options.enable_shaderbox;
             }
         }
 

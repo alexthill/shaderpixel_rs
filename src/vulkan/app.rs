@@ -6,7 +6,7 @@ use super::{
     debug::*,
     helpers::*,
     geometry::Geometry,
-    pipeline::MyPipeline,
+    pipeline::{MyPipeline, MyPipelineCreateInfo},
     shader::{watch_shaders, HotShader},
     texture::Texture,
     vertex::VertexType,
@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use egui_winit_vulkano::Gui;
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use shaderc::ShaderKind;
 use vulkano::{
     buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
@@ -236,15 +236,19 @@ impl App {
             &model,
             VertexType::VertexNorm,
             memory_allocator.clone(),
+            Vec3::splat(1.),
         ).expect("failed to parse model");
         let pipeline_main = MyPipeline::new(
-            "main".to_owned(),
+            MyPipelineCreateInfo {
+                name: "main".to_owned(),
+                vs: Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
+                fs: Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
+                ..Default::default()
+            },
             None,
             None,
             device.clone(),
             geometry,
-            Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
-            Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
             render_pass.clone(),
             viewport.clone(),
             frames_in_flight,
@@ -263,6 +267,7 @@ impl App {
                 &art_obj.model,
                 VertexType::VertexPos,
                 memory_allocator.clone(),
+                art_obj.container_scale,
             ).expect("failed to parse model");
             let texture = if let Some(path) = art_obj.texture.as_ref() {
                 let texture = Texture::new(
@@ -283,13 +288,11 @@ impl App {
                 None
             };
             let pipeline = MyPipeline::new(
-                art_obj.name.clone(),
+                art_obj.into(),
                 Some(art_idx),
                 texture,
                 device.clone(),
                 geometry,
-                Arc::clone(&art_obj.shader_vert),
-                Arc::clone(&art_obj.shader_frag),
                 render_pass.clone(),
                 viewport.clone(),
                 frames_in_flight,
@@ -394,6 +397,7 @@ impl App {
         for pipeline in self.pipelines[1..].iter_mut() {
             if pipeline.has_changed() {
                 pipeline_changed = true;
+                pipeline.reload_shaders(false);
             } else if pipeline.get_pipeline().is_none() {
                 pipeline.update_pipeline(
                     self.device.clone(),
@@ -404,21 +408,24 @@ impl App {
                 pipeline_changed |= pipeline.get_pipeline().is_some();
             }
         }
-        if pipeline_changed {
-            unsafe { self.device.wait_idle().unwrap(); }
-            for pipeline in self.pipelines[1..].iter_mut() {
-                pipeline.reload_shaders(false);
-            }
-            self.update_command_buffers();
-        }
 
         let new_order = Self::get_pipeline_order(&self.pipelines, art_objs);
         if new_order != self.pipeline_order {
             self.pipeline_order = new_order;
-            // if pipeline_changed command_buffers have already been updated
-            if !pipeline_changed {
-                self.update_command_buffers();
+            pipeline_changed = true;
+        }
+
+        for (pipeline, art_obj) in self.pipelines.iter_mut().filter_map(|pip| {
+            pip.get_art_idx().map(|idx| (pip, &art_objs[idx]))
+        }) {
+            if art_obj.enable_pipeline != pipeline.enable_pipeline {
+                pipeline.enable_pipeline = art_obj.enable_pipeline;
+                pipeline_changed = true;
             }
+        }
+
+        if pipeline_changed {
+            self.update_command_buffers();
         }
 
         let (image_i, suboptimal, acquire_future) =
@@ -525,7 +532,7 @@ impl App {
                     dist_to_camera_sqr: f32::MAX,
                     matrix: Mat4::IDENTITY,
                     light_pos: art_objs[0].data.light_pos,
-                    option_values: None,
+                    option_values: Default::default(),
                 }
             });
             let data = Some(data);

@@ -1,4 +1,4 @@
-use crate::art::ArtData;
+use crate::art::{ArtData, ArtObject};
 use super::{
     geometry::Geometry,
     helpers::{fs, vs},
@@ -9,7 +9,7 @@ use super::{
 use std::sync::Arc;
 
 use anyhow::Context;
-use glam::{Mat4, Vec4};
+use glam::Mat4;
 use vulkano::{
     buffer::{
         allocator::SubbufferAllocator,
@@ -40,6 +40,38 @@ use vulkano::{
     shader::EntryPoint,
 };
 
+pub struct MyPipelineCreateInfo {
+    pub name: String,
+    pub vs: Arc<HotShader>,
+    pub fs: Arc<HotShader>,
+    pub enable_pipeline: bool,
+    pub enable_depth_test: bool,
+}
+
+impl Default for MyPipelineCreateInfo {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            vs: Default::default(),
+            fs: Default::default(),
+            enable_pipeline: true,
+            enable_depth_test: true,
+        }
+    }
+}
+
+impl From<&ArtObject> for MyPipelineCreateInfo {
+    fn from(art_obj: &ArtObject) -> Self {
+        Self {
+            name: art_obj.name.clone(),
+            vs: Arc::clone(&art_obj.shader_vert),
+            fs: Arc::clone(&art_obj.shader_frag),
+            enable_pipeline: art_obj.enable_pipeline,
+            enable_depth_test: art_obj.enable_depth_test,
+        }
+    }
+}
+
 pub struct MyPipeline {
     name: String,
     art_idx: Option<usize>,
@@ -51,28 +83,28 @@ pub struct MyPipeline {
     uniform_buffers_frag: Vec<Subbuffer<fs::UniformBufferObject>>,
     vs: Arc<HotShader>,
     fs: Arc<HotShader>,
+    pub enable_pipeline: bool,
+    enable_depth_test: bool,
 }
 
 impl MyPipeline {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        name: String,
+        create_info: MyPipelineCreateInfo,
         art_idx: Option<usize>,
         texture: Option<Texture>,
         device: Arc<Device>,
         geometry: Geometry,
-        vs: Arc<HotShader>,
-        fs: Arc<HotShader>,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
         frames_in_flight: usize,
         uniform_buffer_allocator: &SubbufferAllocator,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<Self> {
-        log::debug!("creating pipeline {name}");
+        log::debug!("creating pipeline {}", create_info.name);
 
-        vs.set_device(device.clone());
-        fs.set_device(device.clone());
+        create_info.vs.set_device(device.clone());
+        create_info.fs.set_device(device.clone());
 
         let uniform_buffers_vert = (0..frames_in_flight).map(|_| {
             uniform_buffer_allocator.allocate_sized::<vs::UniformBufferObject>().unwrap()
@@ -83,7 +115,7 @@ impl MyPipeline {
 
 
         let mut pipeline = Self {
-            name,
+            name: create_info.name,
             art_idx,
             texture,
             pipeline: None,
@@ -91,8 +123,10 @@ impl MyPipeline {
             geometry,
             uniform_buffers_vert,
             uniform_buffers_frag,
-            vs,
-            fs,
+            vs: create_info.vs,
+            fs: create_info.fs,
+            enable_pipeline: create_info.enable_pipeline,
+            enable_depth_test: create_info.enable_depth_test,
         };
         pipeline.update_pipeline(
             device,
@@ -155,10 +189,9 @@ impl MyPipeline {
         };
 
         if let Some(data) = data {
-            let options = data.option_values.unwrap_or(Vec4::splat(0.));
             *self.uniform_buffers_frag[idx].write()? = fs::UniformBufferObject {
                 light_pos: data.light_pos.to_array(),
-                options: options.to_array(),
+                options: data.option_values.to_array(),
                 time,
             };
         }
@@ -186,7 +219,8 @@ impl MyPipeline {
                 vs_entry,
                 fs_entry,
                 render_pass,
-                viewport
+                viewport,
+                self.enable_depth_test,
             )?;
             self.pipeline = Some(pipeline);
             self.update_descriptor_sets(descriptor_set_allocator)
@@ -250,6 +284,7 @@ impl MyPipeline {
         fs_entry: EntryPoint,
         render_pass: Arc<RenderPass>,
         viewport: Viewport,
+        enable_depth_test: bool,
     ) -> anyhow::Result<Arc<GraphicsPipeline>> {
         let stages = [
             PipelineShaderStageCreateInfo::new(vs_entry),
@@ -266,6 +301,11 @@ impl MyPipeline {
 
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
+        let depth = if enable_depth_test {
+            Some(DepthState::simple())
+        } else {
+            None
+        };
         let pipeline = GraphicsPipeline::new(
             device.clone(),
             None,
@@ -286,7 +326,7 @@ impl MyPipeline {
                     ..Default::default()
                 }),
                 depth_stencil_state: Some(DepthStencilState {
-                    depth: Some(DepthState::simple()),
+                    depth,
                     ..Default::default()
                 }),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(

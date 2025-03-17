@@ -25,6 +25,7 @@ impl Geometry {
         model: &NormalizedObj,
         vertex_type: VertexType,
         memory_allocator: Arc<StandardMemoryAllocator>,
+        scale: Vec3,
     ) -> anyhow::Result<Self> {
         let mut min = Vec3::splat(f32::MAX);
         let mut max = Vec3::splat(f32::MIN);
@@ -37,7 +38,8 @@ impl Geometry {
 
         let (vertex_buffer, index_buffer) = match vertex_type {
             VertexType::VertexPos => {
-                let vertices = model.vertices.iter().map(|vertex| {
+                let vertices = model.vertices.iter().copied().map(|mut vertex| {
+                    vertex.pos_coords = (scale * Vec3::from(vertex.pos_coords)).into();
                     VertexPos::new(vertex.pos_coords, vertex.tex_coords, vertex.normal)
                 }).collect::<Vec<_>>();
                 let (vb, ib) = Self::model_to_buffers(&vertices, &model.indices, memory_allocator)?;
