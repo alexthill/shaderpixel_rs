@@ -134,16 +134,8 @@ impl HotShader {
         Ok(inner.module.clone())
     }
 
-    pub fn has_changed(&self) -> bool {
-        match self.inner.read() {
-            Ok(inner) => inner.code_has_changed,
-            Err(_) => {
-                log::error!("Lock poisoned");
-                false
-            }
-        }
-    }
-
+    /// Reloads shader if changed or `forced` is `true`.
+    /// Returns `true` if shader is recompiling.
     pub fn reload(self: &Arc<Self>, forced: bool) -> bool {
         let path = self.path.clone().expect("shader must have a path set to load it");
         let mut inner = self.inner.write().unwrap();

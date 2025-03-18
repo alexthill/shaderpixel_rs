@@ -171,14 +171,15 @@ impl MyPipeline {
         }
     }
 
-    pub fn has_changed(&self) -> bool {
-        self.vs.has_changed() || self.fs.has_changed()
-    }
-
+    /// Checks if shaders need to be reloaded or forces them to be reloaded.
+    /// If shaders are reloaded, then `self.pipeline` is set to `None`.
+    /// Returns `true` if shaders are reloaded and `self.pipeline` was not already `None`.
+    /// Does nothing if pipeline is not enabled.
     pub fn reload_shaders(&mut self, forced: bool) -> bool {
-        if self.vs.reload(forced) | self.fs.reload(forced) {
-            self.pipeline = None;
-            true
+        if !self.enable_pipeline {
+            false
+        } else if self.vs.reload(forced) | self.fs.reload(forced) {
+            self.pipeline.take().is_none()
         } else {
             false
         }

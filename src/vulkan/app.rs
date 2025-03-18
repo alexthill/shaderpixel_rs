@@ -395,9 +395,8 @@ impl App {
     ) -> anyhow::Result<bool> {
         let mut pipeline_changed = false;
         for pipeline in self.pipelines[1..].iter_mut() {
-            if pipeline.has_changed() {
+            if pipeline.reload_shaders(false) {
                 pipeline_changed = true;
-                pipeline.reload_shaders(false);
             } else if pipeline.get_pipeline().is_none() {
                 pipeline.update_pipeline(
                     self.device.clone(),
