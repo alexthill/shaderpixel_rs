@@ -420,6 +420,7 @@ impl App {
         }) {
             if art_obj.enable_pipeline != pipeline.enable_pipeline {
                 pipeline.enable_pipeline = art_obj.enable_pipeline;
+                pipeline.set_shaders(art_obj.shader_vert.clone(), art_obj.shader_frag.clone());
                 pipeline_changed = true;
             }
         }
@@ -509,9 +510,9 @@ impl App {
                     let b = &art_objs[idx_b];
                     a.data.dist_to_camera_sqr.total_cmp(&b.data.dist_to_camera_sqr).reverse()
                 }
-                (Some(_), None) => return Ordering::Greater,
-                (None, Some(_)) => return Ordering::Less,
-                (None, None) => return Ordering::Equal,
+                (Some(_), None) => Ordering::Greater,
+                (None, Some(_)) => Ordering::Less,
+                (None, None) =>  Ordering::Equal,
             }
         });
         pipeline_order
@@ -532,7 +533,7 @@ impl App {
                     dist_to_camera_sqr: f32::MAX,
                     matrix: Mat4::IDENTITY,
                     light_pos: art_objs[0].data.light_pos,
-                    option_values: Default::default(),
+                    ..Default::default()
                 }
             });
             let data = Some(data);

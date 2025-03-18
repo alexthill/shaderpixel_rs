@@ -8,7 +8,7 @@ use crate::{
 use std::sync::Arc;
 
 use egui::Color32;
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec3, Vec4};
 
 pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
     let model_square = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/square.obj")?)?);
@@ -16,6 +16,8 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
 
     let shader_2d = Arc::new(HotShader::new_vert("assets/shaders/art2d.vert"));
     let shader_3d = Arc::new(HotShader::new_vert("assets/shaders/art3d.vert"));
+    let shader_portal = Arc::new(HotShader::new_frag("assets/shaders/portal.frag"));
+    let shader_pillar = Arc::new(HotShader::new_frag("assets/shaders/pillar.frag"));
 
     let mut art_objects = vec![
         ArtObject {
@@ -49,31 +51,29 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
         },
         ArtObject {
             name: "Portal".to_owned(),
-            model: model_square.clone(),
+            model: model_cube.clone(),
             shader_vert: shader_2d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/portal.frag")),
+            shader_frag: shader_portal.clone(),
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(90_f32.to_radians()),
-                [5.99, 1.0, 2.0].into(),
+                [6.0, 1.001, 2.0].into(),
             )),
-            container_scale: Vec3::new(1., 2., 1.),
+            fn_update_data: Some(Box::new(|data, update| {
+                if goes_through_rect(update.old_position, update.new_position, data.matrix) {
+                    data.inside_portal = !data.inside_portal;
+                }
+            })),
+            container_scale: Vec3::new(1., 2., 0.01),
             ..Default::default()
         },
         ArtObject {
             name: "Portalbox".to_owned(),
             model: model_cube.clone(),
-            shader_vert: shader_2d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/portal.frag")),
-            data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.5),
-                Quat::from_rotation_y(90_f32.to_radians()),
-                [5.99, 1.0, 2.0].into(),
-            )),
             fn_update_data: Some(Box::new(|data, _| {
                 // draw after all other shaders
                 data.dist_to_camera_sqr = -1.;
-                data.option_values[0] = 1.;
+                data.option_values[3] = 1.;
             })),
             enable_pipeline: false,
             enable_depth_test: false,
@@ -195,7 +195,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             name: format!("Pillar {i:2}"),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),
-            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/pillar.frag")),
+            shader_frag: shader_pillar.clone(),
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::new(0.53, 0.499, 0.53),
                 Quat::from_rotation_y(0_f32.to_radians()),
@@ -219,4 +219,30 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
     }
 
     Ok(art_objects)
+}
+
+fn goes_through_rect(p0: Vec3, p1: Vec3, matrix: Mat4) -> bool {
+    const EPS: f32 = 0.001;
+    let dir = p1 - p0;
+    let p_norm = (matrix.inverse().transpose() * Vec4::new(0., 0., 1., 0.)).truncate();
+    let p_pos = (matrix * Vec4::new(0., 0., 0., 1.)).truncate();
+    let dot = p_norm.dot(dir);
+    if dot.abs() < EPS {
+        return false; // segment [p0,p1] parallel to plane
+    }
+    let w = p0 - p_pos;
+    let fac = -p_norm.dot(w) / dot;
+    if !(0.0..1.0).contains(&fac) {
+        return false; // segment [p0,p1] not passing through plane
+    }
+    let inter = p0 + dir * fac;
+    let corner0 = matrix * Vec4::new(-1., -2., 0., 1.);
+    let corner1 = matrix * Vec4::new(1., 2., 0., 1.);
+    (0..3).all(|i| {
+        if corner0[i] < corner1[i] {
+            (corner0[i] - EPS .. corner1[i] + EPS).contains(&inter[i])
+        } else {
+            (corner1[i] - EPS .. corner0[i] + EPS).contains(&inter[i])
+        }
+    })
 }

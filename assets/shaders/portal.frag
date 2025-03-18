@@ -14,10 +14,14 @@ layout(set = 0, binding = 1) uniform UniformBufferObject {
 layout(location = 0) out vec4 outColor;
 
 const int NUM_STEPS = 256;
-bool inside = bool(ubo.options[0]);
+bool inside = bool(ubo.options[3]);
 
 vec2 op_union(vec2 a, vec2 b) {
     return a.x < b.x ? a : b;
+}
+
+vec2 op_subtraction(vec2 a, vec2 b) {
+    return -a.x > b.x ? vec2(-a.x, a.y) : b;
 }
 
 float sdf_sphere(vec3 p, float s) {
@@ -31,14 +35,17 @@ float sdf_box(vec3 p, vec3 b) {
 
 vec2 sdf_scene(vec3 p) {
     vec3 s = vec3(2.0);
-    vec3 q = p - s * clamp(round(p / s), vec3(vec2(-2.0), 2.0), vec3(vec2(2.0), 5.0));
+    vec3 q = p - s * clamp(round(p / s), vec3(-10.0), vec3(10.0));
     q.y += sin(round(p.z / s.z) + ubo.time) * 0.2;
 
     float d_sphere = sdf_sphere(q, 0.5);
     vec2 scene = vec2(d_sphere, 0.0);
 
+    float d_empty_box = sdf_box(p, vec3(3.0, 3.0, 3.0));
+    scene = op_subtraction(vec2(d_empty_box, 0.0), scene);
+
     if (inside) {
-        float d_portal = sdf_box(p - vec3(0.0, 0.0, 0.0), vec3(1.0, 2.0, 0.01));
+        float d_portal = sdf_box(p, vec3(1.0, 2.0, 0.01));
         scene = op_union(scene, vec2(d_portal, 1.0));
     }
 
@@ -72,9 +79,10 @@ vec2 raymarch(vec3 pos, vec3 dir, float depth, float max_depth) {
 
 
 void main() {
+    vec3 pos = inside ? cameraPos : fragPos;
     vec3 dir = normalize(fragPos - cameraPos);
     float max_depth = 100.0;
-    vec2 scene = raymarch(cameraPos, dir, 0.0, max_depth);
+    vec2 scene = raymarch(pos, dir, 0.0, max_depth);
 
     if (scene.x < max_depth) {
         if (scene.y == 1.0) {
@@ -84,7 +92,7 @@ void main() {
         vec3 ambient_color = vec3(0.4, 0.2, 0.1);
         vec3 diffuse_color = vec3(0.4, 0.2, 0.1);
 
-        vec3 normal = estimate_normal(cameraPos + scene.x * dir);
+        vec3 normal = estimate_normal(pos + scene.x * dir);
         vec3 light_dir = normalize(ubo.light_pos.xyz);
         float lambertian = max(dot(light_dir, normal), 0.0);
         vec3 color = ambient_color + lambertian * diffuse_color;

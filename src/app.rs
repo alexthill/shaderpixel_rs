@@ -74,7 +74,7 @@ pub struct App {
     key_states: KeyStates,
     /// Number of lines scrolled. Used to determine movement speed.
     scroll_lines: f32,
-    /// Current cursor postion.
+    /// Current cursor position.
     cursor_position: Option<[i32; 2]>,
     /// Movement delta of cursor since last frame.
     cursor_delta: [i32; 2],
@@ -243,13 +243,42 @@ impl ApplicationHandler for App {
             art.data.dist_to_camera_sqr = dist;
         }
         let mut nearest_art = self.art_objects.iter_mut()
-            .filter(|a| !a.options.is_empty() && a.data.dist_to_camera_sqr <= 2.25)
+            .filter(|art| art.enable_pipeline && !art.options.is_empty()
+                && art.data.dist_to_camera_sqr <= 2.25)
             .min_by(|a, b| {
                 a.data.dist_to_camera_sqr.total_cmp(&b.data.dist_to_camera_sqr)
             });
 
         // render gui
         self.gui_state.render(gui, &mut nearest_art, elapsed_dur);
+
+        // update camera
+        let old_position = self.camera.position;
+        let delta = elapsed * (self.scroll_lines * 0.4).exp();
+        let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
+        let y_ratio = self.cursor_delta[1] as f32 / extent.height as f32;
+        if self.key_states.lmb {
+            use std::f32::consts::PI;
+            self.camera.angle_yaw += x_ratio * PI;
+            self.camera.angle_pitch += y_ratio * PI;
+        }
+        self.cursor_delta = [0, 0];
+        let translation = Vec4::from_array([
+            (self.key_states.left    as i8 - self.key_states.right    as i8) as f32,
+            (self.key_states.down    as i8 - self.key_states.up       as i8) as f32,
+            (self.key_states.forward as i8 - self.key_states.backward as i8) as f32,
+            0.
+        ]) * delta * 2.;
+        let rot = if self.camera.fly_mode {
+            Mat4::from_rotation_y(-self.camera.angle_yaw)
+                * Mat4::from_rotation_x(-self.camera.angle_pitch)
+        } else {
+            Mat4::from_rotation_y(-self.camera.angle_yaw)
+        };
+        self.camera.position += (rot * -translation).truncate();
+        vk_app.view_matrix = Mat4::from_rotation_x(self.camera.angle_pitch)
+            * Mat4::from_rotation_y(self.camera.angle_yaw)
+            * Mat4::from_translation(-self.camera.position);
 
         // update options data for nearest_art
         if let Some(art) = nearest_art.as_mut() {
@@ -271,42 +300,31 @@ impl ApplicationHandler for App {
             if let Some(fn_update_data) = art.fn_update_data.as_ref() {
                 fn_update_data(&mut art.data, &ArtUpdateData {
                     skybox_rotation_angle: self.skybox_rotation_angle,
+                    old_position,
+                    new_position: self.camera.position,
                 });
             }
-            if art.name == "Portalbox" {
-                art.enable_pipeline = self.gui_state.options.enable_shaderbox;
+        }
+
+        // handle portal
+        let box_idx = self.art_objects.iter().position(|art| art.name == "Portalbox").unwrap();
+        if let Some(portal_idx)
+            = self.art_objects.iter().position(|art| art.data.inside_portal)
+        {
+            let portal_dist = self.art_objects[portal_idx].data.dist_to_camera_sqr;
+            for art in self.art_objects.iter_mut() {
+                art.enable_pipeline = art.data.dist_to_camera_sqr > portal_dist;
             }
-        }
-
-        // update position
-        let delta = elapsed * (self.scroll_lines * 0.4).exp();
-        let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
-        let y_ratio = self.cursor_delta[1] as f32 / extent.height as f32;
-
-        if self.key_states.lmb {
-            use std::f32::consts::PI;
-            self.camera.angle_yaw += x_ratio * PI;
-            self.camera.angle_pitch += y_ratio * PI;
-        }
-        self.cursor_delta = [0, 0];
-
-        let translation = Vec4::from_array([
-            (self.key_states.left    as i8 - self.key_states.right    as i8) as f32,
-            (self.key_states.down    as i8 - self.key_states.up       as i8) as f32,
-            (self.key_states.forward as i8 - self.key_states.backward as i8) as f32,
-            0.
-        ]) * delta * 2.;
-        let rot = if self.camera.fly_mode {
-            Mat4::from_rotation_y(-self.camera.angle_yaw)
-                * Mat4::from_rotation_x(-self.camera.angle_pitch)
+            self.art_objects[box_idx].enable_pipeline = true;
+            self.art_objects[box_idx].data.matrix = self.art_objects[portal_idx].data.matrix;
+            self.art_objects[box_idx].shader_vert = self.art_objects[portal_idx].shader_vert.clone();
+            self.art_objects[box_idx].shader_frag = self.art_objects[portal_idx].shader_frag.clone();
         } else {
-            Mat4::from_rotation_y(-self.camera.angle_yaw)
-        };
-        self.camera.position += (rot * -translation).truncate();
-
-        vk_app.view_matrix = Mat4::from_rotation_x(self.camera.angle_pitch)
-            * Mat4::from_rotation_y(self.camera.angle_yaw)
-            * Mat4::from_translation(-self.camera.position);
+            for art in self.art_objects.iter_mut() {
+                art.enable_pipeline = true;
+            }
+            self.art_objects[box_idx].enable_pipeline = false;
+        }
 
         // draw and remember if swapchain is dirty
         self.swapchain_dirty = match vk_app.draw(self.time, Some(gui), &self.art_objects) {

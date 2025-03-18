@@ -160,6 +160,17 @@ impl MyPipeline {
 
     pub fn get_art_idx(&self) -> Option<usize> { self.art_idx }
 
+    pub fn set_shaders(&mut self, vs: Arc<HotShader>, fs: Arc<HotShader>) {
+        if !Arc::ptr_eq(&self.vs, &vs) {
+            self.vs = vs;
+            self.pipeline = None;
+        }
+        if !Arc::ptr_eq(&self.fs, &fs) {
+            self.fs = fs;
+            self.pipeline = None;
+        }
+    }
+
     pub fn has_changed(&self) -> bool {
         self.vs.has_changed() || self.fs.has_changed()
     }
@@ -206,6 +217,10 @@ impl MyPipeline {
         viewport: Viewport,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
+        if !self.enable_pipeline {
+            return Ok(());
+        }
+
         let vs_module = self.vs.get_module()?;
         let fs_module = self.fs.get_module()?;
 

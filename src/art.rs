@@ -50,6 +50,8 @@ impl Default for ArtObject {
 #[derive(Debug, Default)]
 pub struct ArtUpdateData {
     pub skybox_rotation_angle: f32,
+    pub old_position: Vec3,
+    pub new_position: Vec3,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -58,6 +60,7 @@ pub struct ArtData {
     pub matrix: Mat4,
     pub light_pos: Vec4,
     pub option_values: Vec4,
+    pub inside_portal: bool,
 }
 
 impl ArtData {
