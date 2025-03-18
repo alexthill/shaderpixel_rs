@@ -119,6 +119,23 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ..Default::default()
         },
         ArtObject {
+            name: "Mandelbulb".to_owned(),
+            model: model_cube.clone(),
+            shader_vert: shader_3d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbulb.frag")),
+            options: vec![
+                ArtOption::slider_i32("Power", 8, 1, 20),
+                ArtOption::slider_i32("Iterations", 10, 1, 100),
+                ArtOption::slider_f32_log("Epsilon", 0.0002, 0.000001, 0.001),
+            ],
+            data: ArtData::new(Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.5),
+                Quat::from_rotation_y(0_f32.to_radians()),
+                [-2.5, 1.5, -10.5].into(),
+            )),
+            ..Default::default()
+        },
+        ArtObject {
             name: "Menger Sponge".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_3d.clone(),

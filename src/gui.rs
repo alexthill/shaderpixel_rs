@@ -151,8 +151,8 @@ impl GuiState {
                 ArtOptionType::Checkbox { checked } => {
                     ui.checkbox(checked, "enable");
                 }
-                ArtOptionType::SliderF32 { value, min, max } => {
-                    ui.add(egui::Slider::new(value, *min..=*max));
+                ArtOptionType::SliderF32 { value, min, max, log } => {
+                    ui.add(egui::Slider::new(value, *min..=*max).logarithmic(*log));
                 }
                 ArtOptionType::SliderI32 { value, min, max } => {
                     ui.add(egui::Slider::new(value, *min..=*max));

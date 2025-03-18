@@ -78,7 +78,7 @@ impl ArtData {
 
 pub enum ArtOptionType {
     Checkbox { checked: bool },
-    SliderF32 { value: f32, min: f32, max: f32 },
+    SliderF32 { value: f32, min: f32, max: f32, log: bool },
     SliderI32 { value: i32, min: i32, max: i32 },
     Stroke { width: f32, color: Color32 },
 }
@@ -119,7 +119,11 @@ impl ArtOption {
     }
 
     pub fn slider_f32(label: &'static str, value: f32, min: f32, max: f32) -> Self {
-        Self { label, ty: ArtOptionType::SliderF32 { value, min, max } }
+        Self { label, ty: ArtOptionType::SliderF32 { value, min, max, log: false } }
+    }
+
+    pub fn slider_f32_log(label: &'static str, value: f32, min: f32, max: f32) -> Self {
+        Self { label, ty: ArtOptionType::SliderF32 { value, min, max, log: true } }
     }
 
     pub fn slider_i32(label: &'static str, value: i32, min: i32, max: i32) -> Self {
