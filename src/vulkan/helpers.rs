@@ -297,9 +297,8 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipelines: &[MyPipeline],
     pipeline_order: &[usize],
-    render_pass: Arc<RenderPass>,
+    subpass: &Subpass,
 ) -> Vec<Arc<SecondaryAutoCommandBuffer>> {
-    let subpass = Subpass::from(render_pass, 0).unwrap();
     (0..count).map(|i| {
         let mut builder = AutoCommandBufferBuilder::secondary(
             command_buffer_allocator.clone(),

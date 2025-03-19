@@ -48,6 +48,8 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 const PREFFERED_IMAGE_COUNT: u32 = 3;
+const SUBPASS_SCENE: u32 = 0;
+const SUBPASS_GUI: u32 = 1;
 
 pub struct App {
     pub view_matrix: Mat4,
@@ -62,6 +64,7 @@ pub struct App {
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     depth_format: Format,
     render_pass: Arc<RenderPass>,
+    subpass_scene: Subpass,
     framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
@@ -192,6 +195,7 @@ impl App {
             depth_format,
             msaa_sample_count,
         );
+        let subpass_scene = Subpass::from(render_pass.clone(), SUBPASS_SCENE).unwrap();
         let framebuffers = get_framebuffers(
             &images,
             depth_format,
@@ -249,7 +253,7 @@ impl App {
             None,
             device.clone(),
             geometry,
-            render_pass.clone(),
+            subpass_scene.clone(),
             viewport.clone(),
             frames_in_flight,
             &uniform_buffer_allocator,
@@ -293,7 +297,7 @@ impl App {
                 texture,
                 device.clone(),
                 geometry,
-                render_pass.clone(),
+                subpass_scene.clone(),
                 viewport.clone(),
                 frames_in_flight,
                 &uniform_buffer_allocator,
@@ -309,7 +313,7 @@ impl App {
             &queue,
             &pipelines,
             &pipeline_order,
-            render_pass.clone(),
+            &subpass_scene,
         );
 
         Self {
@@ -323,6 +327,7 @@ impl App {
             descriptor_set_allocator,
             depth_format,
             render_pass,
+            subpass_scene,
             framebuffers,
             viewport,
             command_buffer_allocator,
@@ -347,7 +352,7 @@ impl App {
     }
 
     pub fn gui_pass(&self) -> Subpass {
-        Subpass::from(self.render_pass.clone(), 1).unwrap()
+        Subpass::from(self.render_pass.clone(), SUBPASS_GUI).unwrap()
     }
 
     pub fn recreate_swapchain(
@@ -376,7 +381,7 @@ impl App {
         for pipeline in self.pipelines.iter_mut() {
             pipeline.update_pipeline(
                 self.device.clone(),
-                self.render_pass.clone(),
+                self.subpass_scene.clone(),
                 self.viewport.clone(),
                 self.descriptor_set_allocator.clone(),
             ).context("failed to update pipeline")?;
@@ -400,7 +405,7 @@ impl App {
             } else if pipeline.get_pipeline().is_none() {
                 pipeline.update_pipeline(
                     self.device.clone(),
-                    self.render_pass.clone(),
+                    self.subpass_scene.clone(),
                     self.viewport.clone(),
                     self.descriptor_set_allocator.clone(),
                 ).context("failed to update pipeline")?;
@@ -550,7 +555,7 @@ impl App {
             &self.queue,
             &self.pipelines,
             &self.pipeline_order,
-            Arc::clone(&self.render_pass),
+            &self.subpass_scene,
         );
     }
 }

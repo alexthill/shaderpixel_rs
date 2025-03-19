@@ -20,6 +20,7 @@ use vulkano::{
         allocator::StandardDescriptorSetAllocator,
         DescriptorSet, WriteDescriptorSet,
     },
+    image::SampleCount,
     pipeline::{
         graphics::{
             color_blend::{
@@ -36,7 +37,7 @@ use vulkano::{
         layout::PipelineDescriptorSetLayoutCreateInfo,
         GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
     },
-    render_pass::{RenderPass, Subpass},
+    render_pass::Subpass,
     shader::EntryPoint,
 };
 
@@ -95,7 +96,7 @@ impl MyPipeline {
         texture: Option<Texture>,
         device: Arc<Device>,
         geometry: Geometry,
-        render_pass: Arc<RenderPass>,
+        subpass: Subpass,
         viewport: Viewport,
         frames_in_flight: usize,
         uniform_buffer_allocator: &SubbufferAllocator,
@@ -130,7 +131,7 @@ impl MyPipeline {
         };
         pipeline.update_pipeline(
             device,
-            render_pass,
+            subpass,
             viewport,
             descriptor_set_allocator,
         )?;
@@ -214,7 +215,7 @@ impl MyPipeline {
     pub fn update_pipeline(
         &mut self,
         device: Arc<Device>,
-        render_pass: Arc<RenderPass>,
+        subpass: Subpass,
         viewport: Viewport,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
@@ -234,7 +235,7 @@ impl MyPipeline {
                 self.geometry.definition(&vs_entry)?,
                 vs_entry,
                 fs_entry,
-                render_pass,
+                subpass,
                 viewport,
                 self.enable_depth_test,
             )?;
@@ -260,6 +261,7 @@ impl MyPipeline {
             return Ok(());
         };
         let layout = &pipeline.layout().set_layouts()[0];
+        let bind_req = pipeline.descriptor_binding_requirements();
         let mut descriptor_sets = Vec::with_capacity(self.uniform_buffers_vert.len());
 
         // A for loop is nicer than zipping iterators together.
@@ -274,14 +276,7 @@ impl MyPipeline {
                     WriteDescriptorSet::image_view_sampler(2, view.clone(), sampler.clone()),
                 );
             }
-            let write_sets = write_sets
-                .into_iter()
-                .filter(|set| {
-                    pipeline
-                        .descriptor_binding_requirements()
-                        .contains_key(&(0, set.binding()))
-                })
-                .collect::<Vec<_>>();
+            write_sets.retain(|set| bind_req.contains_key(&(0, set.binding())));
             descriptor_sets.push(DescriptorSet::new(
                 descriptor_set_allocator.clone(),
                 layout.clone(),
@@ -298,7 +293,7 @@ impl MyPipeline {
         vertex_input_state: VertexInputState,
         vs_entry: EntryPoint,
         fs_entry: EntryPoint,
-        render_pass: Arc<RenderPass>,
+        subpass: Subpass,
         viewport: Viewport,
         enable_depth_test: bool,
     ) -> anyhow::Result<Arc<GraphicsPipeline>> {
@@ -314,8 +309,6 @@ impl MyPipeline {
                 .unwrap(),
         )
         .unwrap();
-
-        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
         let depth = if enable_depth_test {
             Some(DepthState::simple())
@@ -338,7 +331,7 @@ impl MyPipeline {
                     ..Default::default()
                 }),
                 multisample_state: Some(MultisampleState {
-                    rasterization_samples: render_pass.attachments()[0].samples,
+                    rasterization_samples: subpass.num_samples().unwrap_or(SampleCount::Sample1),
                     ..Default::default()
                 }),
                 depth_stencil_state: Some(DepthStencilState {
