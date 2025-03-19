@@ -21,10 +21,14 @@ const float MAX_DIST = INSIDE_SCALE * 2.0;
 float scaleFactor = ubo.options[0];
 int maxIterations = int(ubo.options[1]);
 float epsilon = ubo.options[2];
+bool enable_shadows = bool(ubo.options[3]);
 
-float dist_estimate(vec3 ray_pos, float constant1, float constant2) {
-    vec3 c = ray_pos;
-    vec3 v = ray_pos;
+float constant1 = abs(scaleFactor - 1.0);
+float constant2 = pow(float(abs(scaleFactor)), float(1 - maxIterations));
+
+float sdf_scene(vec3 pos) {
+    vec3 c = pos;
+    vec3 v = pos;
     float dr = 1.0;
 
     for (int i = 0; i < MAX_ITERS; i++) {
@@ -52,42 +56,21 @@ float dist_estimate(vec3 ray_pos, float constant1, float constant2) {
     return (length(v) - constant1) / dr - constant2;
 }
 
-int ray_march(vec3 pos, vec3 ray_dir, inout float dist) {
-    float constant1 = abs(scaleFactor - 1.0);
-    float constant2 = pow(float(abs(scaleFactor)), float(1 - maxIterations));
-
-    for (int i = 0; i < MAX_STEPS; i++) {
-        vec3 ray_pos = pos + ray_dir * dist;
-        float de = dist_estimate(ray_pos, constant1, constant2);
-
-        dist += de * 0.95;
-
-        if (de < epsilon || dist > MAX_DIST) {
-            return i + 1;
-        }
-    }
-
-    return MAX_STEPS;
-}
+#include "includes/fractal.glsl"
 
 void main() {
-    vec3 ray_dir = normalize(fragPos - cameraPos);
-    vec3 ray_pos = (cameraPos + ray_dir * cameraDistToContainer) * INSIDE_SCALE;
+    vec3 dir = normalize(fragPos - cameraPos);
+    vec3 pos = (cameraPos + dir * cameraDistToContainer) * INSIDE_SCALE;
 
-    float dist = 0;
-    int steps = ray_march(ray_pos, ray_dir, dist);
+    float dist = 0.0;
+    int steps = ray_march(pos, dir, dist);
 
     if (dist >= MAX_DIST || steps == MAX_STEPS) {
         outColor = vec4(0.0, 0.0, 0.0, 0.4);
     } else {
-        // The (log(epsilon) * 2.0) offset is to compensate for the fact
-        // that more steps are taken when epsilon is small.
-        float adjusted = max(0.0, float(steps) + log(epsilon) * 2.0);
-        float adjustedMax = float(MAX_STEPS) + log(epsilon) * 2.0;
-
-        // Sqrt increases contrast.
-        float distRatio = sqrt(adjusted / adjustedMax) * 0.8;
-
-        outColor = vec4(vec3(1.0 - distRatio), 1.0);
+        const vec3 ambient_color = vec3(0.5, 0.4, 0.4);
+        const vec3 diffuse_color = vec3(0.4, 0.4, 0.5);
+        vec3 color = calc_lightning(pos, dir, dist, steps, ambient_color, diffuse_color);
+        outColor = vec4(color, 1.0);
     }
 }

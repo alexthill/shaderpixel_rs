@@ -109,7 +109,8 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             options: vec![
                 ArtOption::slider_f32("Scale", 3., -5., 5.),
                 ArtOption::slider_i32("Iterations", 10, 1, 100),
-                ArtOption::slider_f32("Epsilon", 0.0002, 0.00001, 0.001),
+                ArtOption::slider_f32_log("Epsilon", 0.0002, 0.000001, 0.001),
+                ArtOption::checkbox("Shadows", false),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
@@ -127,11 +128,12 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 ArtOption::slider_i32("Power", 8, 1, 20),
                 ArtOption::slider_i32("Iterations", 10, 1, 100),
                 ArtOption::slider_f32_log("Epsilon", 0.0002, 0.000001, 0.001),
+                ArtOption::checkbox("Shadows", true),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 1.5, -10.5].into(),
+                [-2.5, 1.5, -5.5].into(),
             )),
             ..Default::default()
         },
@@ -148,7 +150,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
                 Quat::from_rotation_y(0_f32.to_radians()),
-                [-2.5, 1.5, -5.5].into(),
+                [-2.5, 1.5, -10.5].into(),
             )),
             ..Default::default()
         },
