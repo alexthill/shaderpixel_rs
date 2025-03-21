@@ -27,11 +27,14 @@ use vulkano::{
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     format::Format,
-    image::{ImageUsage, SampleCount},
+    image::{view::ImageView, ImageUsage, SampleCount},
     instance::debug::DebugUtilsMessenger,
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{MemoryTypeFilter, StandardMemoryAllocator},
-    pipeline::graphics::viewport::Viewport,
+    pipeline::graphics::{
+        rasterization::CullMode,
+        viewport::Viewport,
+    },
     render_pass::{Framebuffer, RenderPass, Subpass},
     swapchain::{
         self,
@@ -47,12 +50,14 @@ use vulkano::{
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-const PREFFERED_IMAGE_COUNT: u32 = 3;
-const SUBPASS_SCENE: u32 = 0;
-const SUBPASS_GUI: u32 = 1;
+const PREFFERED_IMAGE_COUNT: u32 = 2;
+const SUBPASS_MIRROR: u32 = 0;
+const SUBPASS_SCENE: u32 = 1;
+const SUBPASS_GUI: u32 = 2;
 
 pub struct App {
     pub view_matrix: Mat4,
+    pub mirror_matrix: Mat4,
 
     #[allow(dead_code)]
     instance: Arc<Instance>,
@@ -64,15 +69,19 @@ pub struct App {
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     depth_format: Format,
     render_pass: Arc<RenderPass>,
+    subpass_mirror: Subpass,
     subpass_scene: Subpass,
+    mirror_buffer: Arc<ImageView>,
     framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<SecondaryAutoCommandBuffer>>,
+    command_buffers_mirror: Vec<Arc<SecondaryAutoCommandBuffer>>,
     #[allow(clippy::type_complexity)]
     fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     previous_fence_i: usize,
     pipelines: Vec<MyPipeline>,
+    pipelines_mirror: Vec<MyPipeline>,
     pipeline_order: Vec<usize>,
 
     // If this falls out of scope then there will be no more debug events.
@@ -195,13 +204,20 @@ impl App {
             depth_format,
             msaa_sample_count,
         );
+        let subpass_mirror = Subpass::from(render_pass.clone(), SUBPASS_MIRROR).unwrap();
         let subpass_scene = Subpass::from(render_pass.clone(), SUBPASS_SCENE).unwrap();
+        let mirror_buffer = get_mirror_buffer(
+            images[0].format(),
+            images[0].extent(),
+            memory_allocator.clone(),
+        );
         let framebuffers = get_framebuffers(
             &images,
             depth_format,
             render_pass.clone(),
             memory_allocator.clone(),
             msaa_sample_count,
+            &mirror_buffer,
         );
 
         let vs = vs::load(device.clone()).expect("failed to create shader module");
@@ -236,29 +252,60 @@ impl App {
             },
         ));
 
-        let geometry = Geometry::from_model(
-            &model,
-            VertexType::VertexNorm,
-            memory_allocator.clone(),
-            Vec3::splat(1.),
-        ).expect("failed to parse model");
-        let pipeline_main = MyPipeline::new(
-            MyPipelineCreateInfo {
-                name: "main".to_owned(),
-                vs: Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
-                fs: Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
-                ..Default::default()
-            },
-            None,
-            None,
-            device.clone(),
-            geometry,
-            subpass_scene.clone(),
-            viewport.clone(),
-            frames_in_flight,
-            &uniform_buffer_allocator,
-            descriptor_set_allocator.clone(),
-        ).unwrap();
+        let pipeline_main = {
+            let geometry = Geometry::from_model(
+                &model,
+                VertexType::VertexNorm,
+                memory_allocator.clone(),
+                Vec3::splat(1.),
+            ).expect("failed to parse model");
+            MyPipeline::new(
+                MyPipelineCreateInfo {
+                    name: "main".to_owned(),
+                    vs: Arc::new(HotShader::new_nonhot(vs.clone(), ShaderKind::Vertex)),
+                    fs: Arc::new(HotShader::new_nonhot(fs.clone(), ShaderKind::Fragment)),
+                    ..Default::default()
+                },
+                None,
+                None,
+                device.clone(),
+                geometry,
+                subpass_scene.clone(),
+                viewport.clone(),
+                frames_in_flight,
+                &uniform_buffer_allocator,
+                descriptor_set_allocator.clone(),
+                None,
+            ).unwrap()
+        };
+        let pipelines_mirror = {
+            let geometry = Geometry::from_model(
+                &model,
+                VertexType::VertexNorm,
+                memory_allocator.clone(),
+                Vec3::splat(1.),
+            ).expect("failed to parse model");
+            let pipeline = MyPipeline::new(
+                MyPipelineCreateInfo {
+                    name: "main".to_owned(),
+                    vs: Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
+                    fs: Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
+                    cull_mode: CullMode::Front,
+                    ..Default::default()
+                },
+                None,
+                None,
+                device.clone(),
+                geometry,
+                subpass_mirror.clone(),
+                viewport.clone(),
+                frames_in_flight,
+                &uniform_buffer_allocator,
+                descriptor_set_allocator.clone(),
+                None,
+            ).unwrap();
+            vec![pipeline]
+        };
 
         let shader_iter = art_objs.iter().flat_map(|art_obj| {
             [art_obj.shader_vert.clone(), art_obj.shader_frag.clone()]
@@ -302,6 +349,7 @@ impl App {
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
+                Some(mirror_buffer.clone()),
             ).unwrap();
             pipelines.push(pipeline);
         }
@@ -315,9 +363,18 @@ impl App {
             &pipeline_order,
             &subpass_scene,
         );
+        let command_buffers_mirror = get_command_buffers(
+            frames_in_flight,
+            &command_buffer_allocator,
+            &queue,
+            &pipelines_mirror,
+            &[0],
+            &subpass_mirror,
+        );
 
         Self {
             view_matrix: Mat4::IDENTITY,
+            mirror_matrix: Mat4::IDENTITY,
             instance,
             device,
             queue,
@@ -327,14 +384,18 @@ impl App {
             descriptor_set_allocator,
             depth_format,
             render_pass,
+            subpass_mirror,
             subpass_scene,
+            mirror_buffer,
             framebuffers,
             viewport,
             command_buffer_allocator,
             command_buffers,
+            command_buffers_mirror,
             fences: vec![None; frames_in_flight],
             previous_fence_i: 0,
             pipelines,
+            pipelines_mirror,
             pipeline_order,
             _debug: debug,
         }
@@ -360,6 +421,7 @@ impl App {
         dimensions: PhysicalSize<u32>,
         options: &crate::gui::Options,
     ) -> anyhow::Result<()> {
+        log::warn!("recreating swapchain with new size {dimensions:?}");
         let (new_swapchain, new_images) = self.swapchain
             .recreate(SwapchainCreateInfo {
                 image_extent: dimensions.into(),
@@ -369,19 +431,34 @@ impl App {
             .context("failed to recreate swapchain")?;
 
         self.swapchain = new_swapchain;
+        self.mirror_buffer = get_mirror_buffer(
+            new_images[0].format(),
+            new_images[0].extent(),
+            self.memory_allocator.clone(),
+        );
         self.framebuffers = get_framebuffers(
             &new_images,
             self.depth_format,
             self.render_pass.clone(),
             self.memory_allocator.clone(),
             self.msaa_sample_count,
+            &self.mirror_buffer,
         );
 
         self.viewport.extent = dimensions.into();
         for pipeline in self.pipelines.iter_mut() {
+            pipeline.mirror_buffer= Some(self.mirror_buffer.clone());
             pipeline.update_pipeline(
                 self.device.clone(),
                 self.subpass_scene.clone(),
+                self.viewport.clone(),
+                self.descriptor_set_allocator.clone(),
+            ).context("failed to update pipeline")?;
+        }
+        for pipeline in self.pipelines_mirror.iter_mut() {
+            pipeline.update_pipeline(
+                self.device.clone(),
+                self.subpass_mirror.clone(),
                 self.viewport.clone(),
                 self.descriptor_set_allocator.clone(),
             ).context("failed to update pipeline")?;
@@ -464,7 +541,10 @@ impl App {
 
         self.update_uniform_buffer(image_i, time, art_objs);
 
-        let mut subpasses = vec![self.command_buffers[image_i].clone()];
+        let mut subpasses = vec![
+            self.command_buffers_mirror[image_i].clone(),
+            self.command_buffers[image_i].clone(),
+        ];
         if let Some(gui) = gui {
             subpasses.push(gui.draw_on_subpass_image(self.swapchain.image_extent()));
         }
@@ -546,6 +626,28 @@ impl App {
                 log::error!("failed to update uniforms: {err:?}");
             }
         }
+        for pipeline in self.pipelines_mirror.iter() {
+            let data = pipeline.get_art_idx().map(|idx| art_objs[idx].data).unwrap_or_else(|| {
+                ArtData {
+                    dist_to_camera_sqr: f32::MAX,
+                    matrix: Mat4::IDENTITY,
+                    light_pos: art_objs[0].data.light_pos,
+                    ..Default::default()
+                }
+            });
+            let (_, _, trans) = self.mirror_matrix.to_scale_rotation_translation();
+            let data = Some(data);
+            let mut reflect_matrix = Mat4::IDENTITY.to_cols_array_2d();
+            reflect_matrix[0][0] = -1.0;
+            let view_matrix = self.view_matrix
+                * Mat4::from_translation(trans)
+                * Mat4::from_cols_array_2d(&reflect_matrix)
+                * Mat4::from_translation(-trans);
+            let res = pipeline.update_uniform_buffer(image_idx, view_matrix, proj, time, data);
+            if let Err(err) = res {
+                log::error!("failed to update uniforms: {err:?}");
+            }
+        }
     }
 
     fn update_command_buffers(&mut self) {
@@ -556,6 +658,14 @@ impl App {
             &self.pipelines,
             &self.pipeline_order,
             &self.subpass_scene,
+        );
+        self.command_buffers_mirror = get_command_buffers(
+            self.fences.len(),
+            &self.command_buffer_allocator,
+            &self.queue,
+            &self.pipelines_mirror,
+            &[0],
+            &self.subpass_mirror,
         );
     }
 }

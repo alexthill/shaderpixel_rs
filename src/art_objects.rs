@@ -50,6 +50,18 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ..Default::default()
         },
         ArtObject {
+            name: "Mirror".to_owned(),
+            model: model_square.clone(),
+            shader_vert: shader_2d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mirror.frag")),
+            data: ArtData::new(Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.5),
+                Quat::from_rotation_y(90_f32.to_radians()),
+                [5.99, 1.5, -7.5].into(),
+            )),
+            ..Default::default()
+        },
+        ArtObject {
             name: "Portal".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_2d.clone(),
@@ -243,8 +255,8 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
 fn goes_through_rect(p0: Vec3, p1: Vec3, matrix: Mat4) -> bool {
     const EPS: f32 = 0.001;
     let dir = p1 - p0;
-    let p_norm = (matrix.inverse().transpose() * Vec4::new(0., 0., 1., 0.)).truncate();
-    let p_pos = (matrix * Vec4::new(0., 0., 0., 1.)).truncate();
+    let p_norm = matrix.inverse().transpose().transform_vector3(Vec3::new(0., 0., 1.));
+    let p_pos = matrix.transform_point3(Vec3::new(0., 0., 0.));
     let dot = p_norm.dot(dir);
     if dot.abs() < EPS {
         return false; // segment [p0,p1] parallel to plane

@@ -326,6 +326,10 @@ impl ApplicationHandler for App {
             self.art_objects[box_idx].enable_pipeline = false;
         }
 
+        // handle mirror
+        let mirror_idx = self.art_objects.iter().position(|art| art.name == "Mirror").unwrap();
+        vk_app.mirror_matrix = self.art_objects[mirror_idx].data.matrix;
+
         // draw and remember if swapchain is dirty
         self.swapchain_dirty = match vk_app.draw(self.time, Some(gui), &self.art_objects) {
             Ok(swapchain_dirty) => swapchain_dirty,

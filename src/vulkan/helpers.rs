@@ -154,11 +154,23 @@ pub fn get_render_pass(
     vulkano::ordered_passes_renderpass!(
         device,
         attachments: {
+            mirror: {
+                format: swapchain.image_format(),
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            },
             intermediary: {
                 format: swapchain.image_format(),
                 samples: msaa_sample_count as u32,
                 load_op: Clear,
                 store_op: Store,
+            },
+            depth_stencil_no_msaa: {
+                format: depth_format,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
             },
             depth_stencil: {
                 format: depth_format,
@@ -174,12 +186,18 @@ pub fn get_render_pass(
             },
         },
         passes: [
+            // Mirror render pass
+            {
+                color: [mirror],
+                depth_stencil: {depth_stencil_no_msaa},
+                input: [],
+            },
             // Scene render pass
             {
                 color: [intermediary],
                 color_resolve: [color],
                 depth_stencil: {depth_stencil},
-                input: [],
+                input: [mirror],
             },
             // Gui render pass
             {
@@ -192,13 +210,37 @@ pub fn get_render_pass(
     .unwrap()
 }
 
+pub fn get_mirror_buffer(
+    format: Format,
+    extent: [u32; 3],
+    memory_allocator: Arc<dyn MemoryAllocator>,
+) -> Arc::<ImageView> {
+    ImageView::new_default(
+        Image::new(
+            memory_allocator,
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format,
+                extent,
+                usage: ImageUsage::COLOR_ATTACHMENT
+                    | ImageUsage::INPUT_ATTACHMENT
+                    | ImageUsage::TRANSIENT_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        ).unwrap(),
+    ).unwrap()
+}
+
 pub fn get_framebuffers(
     images: &[Arc<Image>],
     depth_format: Format,
     render_pass: Arc<RenderPass>,
     memory_allocator: Arc<dyn MemoryAllocator>,
     msaa_sample_count: SampleCount,
+    mirror_buffer: &Arc<ImageView>,
 ) -> Vec<Arc<Framebuffer>> {
+    println!("image {:#?}", images[0]);
     let intermediary = ImageView::new_default(
         Image::new(
             memory_allocator.clone(),
@@ -215,9 +257,24 @@ pub fn get_framebuffers(
         .unwrap(),
     )
     .unwrap();
+    let depth_buffer_no_msaa = ImageView::new_default(
+        Image::new(
+            memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: depth_format,
+                extent: images[0].extent(),
+                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let depth_buffer = ImageView::new_default(
         Image::new(
-            memory_allocator,
+            memory_allocator.clone(),
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
                 format: depth_format,
@@ -234,16 +291,27 @@ pub fn get_framebuffers(
 
     images
         .iter()
-        .map(|image| {
+        .enumerate()
+        .map(|(image_i, image)| {
             let view = ImageView::new_default(image.clone()).unwrap();
-            Framebuffer::new(
+            let fb = Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![intermediary.clone(), depth_buffer.clone(), view],
+                    attachments: vec![
+                        mirror_buffer.clone(),
+                        intermediary.clone(),
+                        depth_buffer_no_msaa.clone(),
+                        depth_buffer.clone(),
+                        view,
+                    ],
                     ..Default::default()
                 },
             )
-            .unwrap()
+            .unwrap();
+            for (i, a) in fb.attachments().iter().enumerate() {
+                log::info!("{image_i}:{i}: {a:#?}");
+            }
+            fb
         })
         .collect::<Vec<_>>()
 }
@@ -264,7 +332,9 @@ pub fn get_primary_command_buffer(
         .begin_render_pass(
             RenderPassBeginInfo {
                 clear_values: vec![
+                    Some([0.0, 0.8, 0.0, 1.0].into()),  // mirror color
                     Some([0.0, 0.0, 0.8, 1.0].into()),  // intermediary color
+                    Some(ClearValue::Depth(1.0)),       // depth no msaa
                     Some(ClearValue::Depth(1.0)),       // depth
                     None,                               // final color
                 ],
@@ -289,6 +359,34 @@ pub fn get_primary_command_buffer(
     }
     builder.end_render_pass(Default::default())?;
     Ok(builder.build()?)
+}
+
+use vulkano::image::{ImageLayout, ImageSubresourceRange};
+use vulkano::sync::{AccessFlags, ImageMemoryBarrier};
+
+fn _get_image_memory_barrier(
+    image: Arc<Image>,
+) -> ImageMemoryBarrier {
+    let format = image.format();
+    let mut barrier = ImageMemoryBarrier::image(image);
+    barrier.src_access = AccessFlags::SHADER_WRITE;
+    barrier.dst_access = AccessFlags::SHADER_READ;
+    barrier.old_layout = ImageLayout::Undefined;
+    barrier.new_layout = ImageLayout::ShaderReadOnlyOptimal;
+    barrier.subresource_range = ImageSubresourceRange::from_parameters(format, 1, 1);
+    barrier
+        /*
+        src_stages: PipelineStages,
+        src_access: AccessFlags,
+        dst_stages: PipelineStages,
+        dst_access: AccessFlags,
+        old_layout: ImageLayout,
+        new_layout: ImageLayout,
+        queue_family_ownership_transfer: Option<QueueFamilyOwnershipTransfer>,
+        image,
+        subresource_range: ImageSubresourceRange,
+        ..Default::default()
+        */
 }
 
 pub fn get_command_buffers(

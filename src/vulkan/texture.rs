@@ -244,3 +244,12 @@ impl Texture {
         Ok(())
     }
 }
+
+impl Clone for Texture {
+    fn clone(&self) -> Self {
+        Self {
+            view: Arc::clone(&self.view),
+            sampler: Arc::clone(&self.sampler),
+        }
+    }
+}
