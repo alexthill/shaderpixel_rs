@@ -50,6 +50,21 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             ..Default::default()
         },
         ArtObject {
+            name: "Colorful Mozaic".to_owned(),
+            model: model_square.clone(),
+            shader_vert: shader_2d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mozaic.frag")),
+            options: vec![
+                ArtOption::slider_f32("Speed", 1., 0., 10.),
+            ],
+            data: ArtData::new(Mat4::from_scale_rotation_translation(
+                Vec3::splat(0.5),
+                Quat::from_rotation_y(90_f32.to_radians()),
+                [5.99, 1.5, -7.5].into(),
+            )),
+            ..Default::default()
+        },
+        ArtObject {
             name: "Portal".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_2d.clone(),
