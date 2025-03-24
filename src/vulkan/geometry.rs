@@ -12,6 +12,7 @@ use vulkano::{
     ValidationError,
 };
 
+#[derive(Debug, Clone)]
 pub struct Geometry {
     vertex_type: VertexType,
     vertex_buffer: Subbuffer<[u8]>,

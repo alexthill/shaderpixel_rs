@@ -2,6 +2,7 @@ use super::pipeline::MyPipeline;
 
 use std::sync::Arc;
 
+use glam::{Mat4, Vec4};
 use vulkano::{
     command_buffer::{
         allocator::StandardCommandBufferAllocator,
@@ -154,11 +155,23 @@ pub fn get_render_pass(
     vulkano::ordered_passes_renderpass!(
         device,
         attachments: {
+            mirror: {
+                format: swapchain.image_format(),
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            },
             intermediary: {
                 format: swapchain.image_format(),
                 samples: msaa_sample_count as u32,
                 load_op: Clear,
                 store_op: Store,
+            },
+            depth_stencil_no_msaa: {
+                format: depth_format,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
             },
             depth_stencil: {
                 format: depth_format,
@@ -174,12 +187,18 @@ pub fn get_render_pass(
             },
         },
         passes: [
+            // Mirror render pass
+            {
+                color: [mirror],
+                depth_stencil: {depth_stencil_no_msaa},
+                input: [],
+            },
             // Scene render pass
             {
                 color: [intermediary],
                 color_resolve: [color],
                 depth_stencil: {depth_stencil},
-                input: [],
+                input: [mirror],
             },
             // Gui render pass
             {
@@ -192,12 +211,35 @@ pub fn get_render_pass(
     .unwrap()
 }
 
+pub fn get_mirror_buffer(
+    format: Format,
+    extent: [u32; 3],
+    memory_allocator: Arc<dyn MemoryAllocator>,
+) -> Arc::<ImageView> {
+    ImageView::new_default(
+        Image::new(
+            memory_allocator,
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format,
+                extent,
+                usage: ImageUsage::COLOR_ATTACHMENT
+                    | ImageUsage::INPUT_ATTACHMENT
+                    | ImageUsage::TRANSIENT_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        ).unwrap(),
+    ).unwrap()
+}
+
 pub fn get_framebuffers(
     images: &[Arc<Image>],
     depth_format: Format,
     render_pass: Arc<RenderPass>,
     memory_allocator: Arc<dyn MemoryAllocator>,
     msaa_sample_count: SampleCount,
+    mirror_buffer: &Arc<ImageView>,
 ) -> Vec<Arc<Framebuffer>> {
     let intermediary = ImageView::new_default(
         Image::new(
@@ -215,9 +257,24 @@ pub fn get_framebuffers(
         .unwrap(),
     )
     .unwrap();
+    let depth_buffer_no_msaa = ImageView::new_default(
+        Image::new(
+            memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format: depth_format,
+                extent: images[0].extent(),
+                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let depth_buffer = ImageView::new_default(
         Image::new(
-            memory_allocator,
+            memory_allocator.clone(),
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
                 format: depth_format,
@@ -239,7 +296,13 @@ pub fn get_framebuffers(
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![intermediary.clone(), depth_buffer.clone(), view],
+                    attachments: vec![
+                        mirror_buffer.clone(),
+                        intermediary.clone(),
+                        depth_buffer_no_msaa.clone(),
+                        depth_buffer.clone(),
+                        view,
+                    ],
                     ..Default::default()
                 },
             )
@@ -264,7 +327,9 @@ pub fn get_primary_command_buffer(
         .begin_render_pass(
             RenderPassBeginInfo {
                 clear_values: vec![
+                    Some([0.0, 0.8, 0.0, 1.0].into()),  // mirror color
                     Some([0.0, 0.0, 0.8, 1.0].into()),  // intermediary color
+                    Some(ClearValue::Depth(1.0)),       // depth no msaa
                     Some(ClearValue::Depth(1.0)),       // depth
                     None,                               // final color
                 ],
@@ -358,4 +423,23 @@ pub fn find_depth_format(device: &PhysicalDevice) -> Option<Format> {
             ..Default::default()
         }).ok().is_some()
     })
+}
+
+/// Creates a projection matrix with an oblique near clipping plane.
+/// See <https://terathon.com/lengyel/Lengyel-Oblique.pdf>
+/// and <https://qgu.io/blog/2020/10/30/oblique-clipping-plane/> for vulkan adaptation.
+pub fn oblique_projection_matrix(matrix: Mat4, clip_plane: Vec4) -> Mat4 {
+    let inv = matrix.inverse();
+    let mut matrix = matrix.to_cols_array();
+    let c = inv.transpose() * clip_plane;
+    let q = inv * Vec4::new(c.x.signum(), c.y.signum(), 1., 1.);
+    let m4 = Vec4::new(matrix[3], matrix[7], matrix[11], matrix[15]);
+    let m3 = (m4.dot(q) / clip_plane.dot(q)) * clip_plane;
+
+    matrix[2] = m3.x;
+    matrix[6] = m3.y;
+    matrix[10] = m3.z;
+    matrix[14] = m3.w;
+
+    Mat4::from_cols_array(&matrix)
 }

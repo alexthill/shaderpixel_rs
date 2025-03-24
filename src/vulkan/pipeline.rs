@@ -20,7 +20,7 @@ use vulkano::{
         allocator::StandardDescriptorSetAllocator,
         DescriptorSet, WriteDescriptorSet,
     },
-    image::SampleCount,
+    image::{view::ImageView, SampleCount},
     pipeline::{
         graphics::{
             color_blend::{
@@ -47,6 +47,8 @@ pub struct MyPipelineCreateInfo {
     pub fs: Arc<HotShader>,
     pub enable_pipeline: bool,
     pub enable_depth_test: bool,
+    pub cull_mode: CullMode,
+    pub mirror_buffer: Option<Arc<ImageView>>,
 }
 
 impl Default for MyPipelineCreateInfo {
@@ -57,6 +59,8 @@ impl Default for MyPipelineCreateInfo {
             fs: Default::default(),
             enable_pipeline: true,
             enable_depth_test: true,
+            cull_mode: CullMode::Back,
+            mirror_buffer: None,
         }
     }
 }
@@ -69,6 +73,7 @@ impl From<&ArtObject> for MyPipelineCreateInfo {
             fs: Arc::clone(&art_obj.shader_frag),
             enable_pipeline: art_obj.enable_pipeline,
             enable_depth_test: art_obj.enable_depth_test,
+            ..Default::default()
         }
     }
 }
@@ -77,6 +82,7 @@ pub struct MyPipeline {
     name: String,
     art_idx: Option<usize>,
     texture: Option<Texture>,
+    subpass: Subpass,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
     geometry: Geometry,
@@ -86,6 +92,8 @@ pub struct MyPipeline {
     fs: Arc<HotShader>,
     pub enable_pipeline: bool,
     enable_depth_test: bool,
+    pub mirror_buffer: Option<Arc<ImageView>>,
+    cull_mode: CullMode,
 }
 
 impl MyPipeline {
@@ -120,6 +128,7 @@ impl MyPipeline {
             art_idx,
             texture,
             pipeline: None,
+            subpass,
             descriptor_sets: None,
             geometry,
             uniform_buffers_vert,
@@ -128,10 +137,11 @@ impl MyPipeline {
             fs: create_info.fs,
             enable_pipeline: create_info.enable_pipeline,
             enable_depth_test: create_info.enable_depth_test,
+            mirror_buffer: create_info.mirror_buffer,
+            cull_mode: create_info.cull_mode,
         };
         pipeline.update_pipeline(
             device,
-            subpass,
             viewport,
             descriptor_set_allocator,
         )?;
@@ -180,7 +190,7 @@ impl MyPipeline {
         if !self.enable_pipeline {
             false
         } else if self.vs.reload(forced) | self.fs.reload(forced) {
-            self.pipeline.take().is_none()
+            self.pipeline.take().is_some()
         } else {
             false
         }
@@ -215,7 +225,6 @@ impl MyPipeline {
     pub fn update_pipeline(
         &mut self,
         device: Arc<Device>,
-        subpass: Subpass,
         viewport: Viewport,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
@@ -235,9 +244,10 @@ impl MyPipeline {
                 self.geometry.definition(&vs_entry)?,
                 vs_entry,
                 fs_entry,
-                subpass,
+                self.subpass.clone(),
                 viewport,
                 self.enable_depth_test,
+                self.cull_mode,
             )?;
             self.pipeline = Some(pipeline);
             self.update_descriptor_sets(descriptor_set_allocator)
@@ -272,9 +282,12 @@ impl MyPipeline {
                 WriteDescriptorSet::buffer(1, self.uniform_buffers_frag[i].clone()),
             ];
             if let Some(Texture { view, sampler }) = self.texture.as_ref() {
-                write_sets.push(
-                    WriteDescriptorSet::image_view_sampler(2, view.clone(), sampler.clone()),
-                );
+                let set = WriteDescriptorSet::image_view_sampler(2, view.clone(), sampler.clone());
+                write_sets.push(set);
+            }
+            if let Some(mirror_buffer) = self.mirror_buffer.as_ref() {
+                let set = WriteDescriptorSet::image_view(3, mirror_buffer.clone());
+                write_sets.push(set);
             }
             write_sets.retain(|set| bind_req.contains_key(&(0, set.binding())));
             descriptor_sets.push(DescriptorSet::new(
@@ -296,6 +309,7 @@ impl MyPipeline {
         subpass: Subpass,
         viewport: Viewport,
         enable_depth_test: bool,
+        cull_mode: CullMode,
     ) -> anyhow::Result<Arc<GraphicsPipeline>> {
         let stages = [
             PipelineShaderStageCreateInfo::new(vs_entry),
@@ -327,7 +341,7 @@ impl MyPipeline {
                     ..Default::default()
                 }),
                 rasterization_state: Some(RasterizationState {
-                    cull_mode: CullMode::Back,
+                    cull_mode,
                     ..Default::default()
                 }),
                 multisample_state: Some(MultisampleState {
@@ -357,5 +371,18 @@ impl MyPipeline {
             },
         )?;
         Ok(pipeline)
+    }
+}
+
+
+pub struct MyPipelines {
+    pub order: Vec<usize>,
+    pub scene: Vec<MyPipeline>,
+    pub mirror: Vec<MyPipeline>,
+}
+
+impl MyPipelines {
+    pub fn iter_mut(&mut self, skip: usize) -> impl Iterator<Item = &mut MyPipeline> {
+        self.scene.iter_mut().skip(skip).chain(self.mirror.iter_mut().skip(skip))
     }
 }

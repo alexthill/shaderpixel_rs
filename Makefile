@@ -23,7 +23,7 @@ build_release:
 
 r: run
 run: download build
-	@RUST_LOG=debug $(TARGET)/debug/$(BIN_NAME)
+	@RUST_BACKTRACE=1 RUST_LOG=debug $(TARGET)/debug/$(BIN_NAME)
 
 rr: run_release
 run_release: download build_release

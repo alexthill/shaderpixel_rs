@@ -81,7 +81,7 @@ pub fn watch_shaders<S: IntoIterator<Item = Arc<HotShader>>>(shaders: S) {
                         }
                     }
                 }
-                Err(e) => log::info!("watch error: {:?}", e),
+                Err(e) => log::warn!("watch error: {:?}", e),
             }
         }
     });
@@ -137,7 +137,7 @@ impl HotShader {
     /// Reloads shader if changed or `forced` is `true`.
     /// Returns `true` if shader is recompiling.
     pub fn reload(self: &Arc<Self>, forced: bool) -> bool {
-        let path = self.path.clone().expect("shader must have a path set to load it");
+        let path = self.path.as_ref().expect("shader must have a path set to load it");
         let mut inner = self.inner.write().unwrap();
         if inner.is_compiling {
             return true;
