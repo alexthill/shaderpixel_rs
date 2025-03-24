@@ -9,6 +9,9 @@ pub fn default_env() -> Obj {
         // big wall for images
         Wall { start: [6., -14.], end: [6.2, 0.], height: 3. },
 
+        // wall for mirror
+        Wall { start: [-6.2, -3.], end: [-6.0, 1.], height: 3. },
+
         /* currently replaced by some pillar shaders
         // podests row left
         Wall { start: [-3., -1.], end: [-2.,  0.], height: 1. },
@@ -19,8 +22,8 @@ pub fn default_env() -> Obj {
         */
     ];
     generate_env(
-        [-10.0, 0.0, -15.0],
-        [  8.2, 0.0,   4.2],
+        [-16.0, 0.0, -16.0],
+        [ 16.2, 0.0,  16.2],
         &walls,
     )
 }

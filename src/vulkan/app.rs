@@ -6,7 +6,7 @@ use super::{
     debug::*,
     helpers::*,
     geometry::Geometry,
-    pipeline::{MyPipeline, MyPipelineCreateInfo},
+    pipeline::{MyPipeline, MyPipelineCreateInfo, MyPipelines},
     shader::{watch_shaders, HotShader},
     texture::Texture,
     vertex::VertexType,
@@ -75,14 +75,12 @@ pub struct App {
     framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    command_buffers: Vec<Arc<SecondaryAutoCommandBuffer>>,
+    command_buffers_scene: Vec<Arc<SecondaryAutoCommandBuffer>>,
     command_buffers_mirror: Vec<Arc<SecondaryAutoCommandBuffer>>,
     #[allow(clippy::type_complexity)]
     fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     previous_fence_i: usize,
-    pipelines: Vec<MyPipeline>,
-    pipelines_mirror: Vec<MyPipeline>,
-    pipeline_order: Vec<usize>,
+    pipelines: MyPipelines,
 
     // If this falls out of scope then there will be no more debug events.
     // Put it at the end so that it gets dropped last.
@@ -252,14 +250,14 @@ impl App {
             },
         ));
 
-        let pipeline_main = {
-            let geometry = Geometry::from_model(
-                &model,
-                VertexType::VertexNorm,
-                memory_allocator.clone(),
-                Vec3::splat(1.),
-            ).expect("failed to parse model");
-            MyPipeline::new(
+        let geometry = Geometry::from_model(
+            &model,
+            VertexType::VertexNorm,
+            memory_allocator.clone(),
+            Vec3::splat(1.),
+        ).expect("failed to parse model");
+        let mut pipelines_scene = {
+            let pipeline = MyPipeline::new(
                 MyPipelineCreateInfo {
                     name: "main".to_owned(),
                     vs: Arc::new(HotShader::new_nonhot(vs.clone(), ShaderKind::Vertex)),
@@ -269,25 +267,19 @@ impl App {
                 None,
                 None,
                 device.clone(),
-                geometry,
+                geometry.clone(),
                 subpass_scene.clone(),
                 viewport.clone(),
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-                None,
-            ).unwrap()
+            ).unwrap();
+            vec![pipeline]
         };
-        let pipelines_mirror = {
-            let geometry = Geometry::from_model(
-                &model,
-                VertexType::VertexNorm,
-                memory_allocator.clone(),
-                Vec3::splat(1.),
-            ).expect("failed to parse model");
+        let mut pipelines_mirror = {
             let pipeline = MyPipeline::new(
                 MyPipelineCreateInfo {
-                    name: "main".to_owned(),
+                    name: "main mirror".to_owned(),
                     vs: Arc::new(HotShader::new_nonhot(vs, ShaderKind::Vertex)),
                     fs: Arc::new(HotShader::new_nonhot(fs, ShaderKind::Fragment)),
                     cull_mode: CullMode::Front,
@@ -302,7 +294,6 @@ impl App {
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-                None,
             ).unwrap();
             vec![pipeline]
         };
@@ -312,7 +303,6 @@ impl App {
         });
         watch_shaders(shader_iter);
 
-        let mut pipelines = vec![pipeline_main];
         for (art_idx, art_obj) in art_objs.iter().enumerate() {
             let geometry = Geometry::from_model(
                 &art_obj.model,
@@ -320,59 +310,61 @@ impl App {
                 memory_allocator.clone(),
                 art_obj.container_scale,
             ).expect("failed to parse model");
-            let texture = if let Some(path) = art_obj.texture.as_ref() {
-                let texture = Texture::new(
+            let texture = art_obj.texture.as_ref().and_then(|path| {
+                Texture::new(
                     path,
                     device.clone(),
                     queue.clone(),
                     command_buffer_allocator.clone(),
                     memory_allocator.clone(),
-                );
-                match texture {
-                    Ok(texture) => Some(texture),
-                    Err(err) => {
-                        log::error!("failed to load texture: {err:?}");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+                ).inspect_err(|err| {
+                    log::error!("failed to load texture {}: {err:?}", path.display())
+                }).ok()
+            });
             let pipeline = MyPipeline::new(
-                art_obj.into(),
+                MyPipelineCreateInfo {
+                    mirror_buffer: Some(mirror_buffer.clone()),
+                    ..art_obj.into()
+                },
                 Some(art_idx),
-                texture,
+                texture.clone(),
                 device.clone(),
-                geometry,
+                geometry.clone(),
                 subpass_scene.clone(),
                 viewport.clone(),
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-                Some(mirror_buffer.clone()),
             ).unwrap();
-            pipelines.push(pipeline);
+            pipelines_scene.push(pipeline);
+
+            let pipeline = MyPipeline::new(
+                MyPipelineCreateInfo {
+                    name: format!("{} mirror", art_obj.name),
+                    enable_pipeline: art_obj.enable_pipeline && !art_obj.is_mirror,
+                    cull_mode: CullMode::Front,
+                    ..art_obj.into()
+                },
+                Some(art_idx),
+                texture,
+                device.clone(),
+                geometry,
+                subpass_mirror.clone(),
+                viewport.clone(),
+                frames_in_flight,
+                &uniform_buffer_allocator,
+                descriptor_set_allocator.clone(),
+            ).unwrap();
+            pipelines_mirror.push(pipeline);
         }
-        let pipeline_order = Self::get_pipeline_order(&pipelines, art_objs);
 
-        let command_buffers = get_command_buffers(
-            frames_in_flight,
-            &command_buffer_allocator,
-            &queue,
-            &pipelines,
-            &pipeline_order,
-            &subpass_scene,
-        );
-        let command_buffers_mirror = get_command_buffers(
-            frames_in_flight,
-            &command_buffer_allocator,
-            &queue,
-            &pipelines_mirror,
-            &[0],
-            &subpass_mirror,
-        );
+        let pipelines = MyPipelines {
+            order: Self::get_pipeline_order(&pipelines_scene, art_objs),
+            scene: pipelines_scene,
+            mirror: pipelines_mirror,
+        };
 
-        Self {
+        let mut app = Self {
             view_matrix: Mat4::IDENTITY,
             mirror_matrix: Mat4::IDENTITY,
             instance,
@@ -390,15 +382,15 @@ impl App {
             framebuffers,
             viewport,
             command_buffer_allocator,
-            command_buffers,
-            command_buffers_mirror,
+            command_buffers_scene: Vec::new(),
+            command_buffers_mirror: Vec::new(),
             fences: vec![None; frames_in_flight],
             previous_fence_i: 0,
             pipelines,
-            pipelines_mirror,
-            pipeline_order,
             _debug: debug,
-        }
+        };
+        app.update_command_buffers();
+        app
     }
 
     pub fn get_queue(&self) -> &Arc<Queue> { &self.queue }
@@ -446,19 +438,10 @@ impl App {
         );
 
         self.viewport.extent = dimensions.into();
-        for pipeline in self.pipelines.iter_mut() {
-            pipeline.mirror_buffer= Some(self.mirror_buffer.clone());
+        for pipeline in self.pipelines.iter_mut(0) {
+            pipeline.mirror_buffer = Some(self.mirror_buffer.clone());
             pipeline.update_pipeline(
                 self.device.clone(),
-                self.subpass_scene.clone(),
-                self.viewport.clone(),
-                self.descriptor_set_allocator.clone(),
-            ).context("failed to update pipeline")?;
-        }
-        for pipeline in self.pipelines_mirror.iter_mut() {
-            pipeline.update_pipeline(
-                self.device.clone(),
-                self.subpass_mirror.clone(),
                 self.viewport.clone(),
                 self.descriptor_set_allocator.clone(),
             ).context("failed to update pipeline")?;
@@ -476,13 +459,12 @@ impl App {
         art_objs: &[ArtObject],
     ) -> anyhow::Result<bool> {
         let mut pipeline_changed = false;
-        for pipeline in self.pipelines[1..].iter_mut() {
+        for pipeline in self.pipelines.iter_mut(1) {
             if pipeline.reload_shaders(false) {
                 pipeline_changed = true;
             } else if pipeline.get_pipeline().is_none() {
                 pipeline.update_pipeline(
                     self.device.clone(),
-                    self.subpass_scene.clone(),
                     self.viewport.clone(),
                     self.descriptor_set_allocator.clone(),
                 ).context("failed to update pipeline")?;
@@ -490,13 +472,13 @@ impl App {
             }
         }
 
-        let new_order = Self::get_pipeline_order(&self.pipelines, art_objs);
-        if new_order != self.pipeline_order {
-            self.pipeline_order = new_order;
+        let new_order = Self::get_pipeline_order(&self.pipelines.scene, art_objs);
+        if new_order != self.pipelines.order {
+            self.pipelines.order = new_order;
             pipeline_changed = true;
         }
 
-        for (pipeline, art_obj) in self.pipelines.iter_mut().filter_map(|pip| {
+        for (pipeline, art_obj) in self.pipelines.scene.iter_mut().filter_map(|pip| {
             pip.get_art_idx().map(|idx| (pip, &art_objs[idx]))
         }) {
             if art_obj.enable_pipeline != pipeline.enable_pipeline {
@@ -543,7 +525,7 @@ impl App {
 
         let mut subpasses = vec![
             self.command_buffers_mirror[image_i].clone(),
-            self.command_buffers[image_i].clone(),
+            self.command_buffers_scene[image_i].clone(),
         ];
         if let Some(gui) = gui {
             subpasses.push(gui.draw_on_subpass_image(self.swapchain.image_extent()));
@@ -576,7 +558,7 @@ impl App {
                 None
             }
             Err(e) => {
-                println!("failed to flush future: {e}");
+                log::error!("failed to flush future: {e}");
                 None
             }
         };
@@ -611,7 +593,8 @@ impl App {
             0.01,
             200.0,
         );
-        for pipeline in self.pipelines.iter() {
+
+        for pipeline in self.pipelines.scene.iter() {
             let data = pipeline.get_art_idx().map(|idx| art_objs[idx].data).unwrap_or_else(|| {
                 ArtData {
                     dist_to_camera_sqr: f32::MAX,
@@ -626,7 +609,25 @@ impl App {
                 log::error!("failed to update uniforms: {err:?}");
             }
         }
-        for pipeline in self.pipelines_mirror.iter() {
+
+        let clip_pos = self.mirror_matrix
+            .transform_point3(Vec3::new(0., 0., 0.));
+        let clip_norm = self.mirror_matrix.inverse().transpose()
+            .transform_vector3(Vec3::new(0., 0., -1.));
+
+        let mut reflect_matrix = Mat4::IDENTITY.to_cols_array_2d();
+        reflect_matrix[0][0] = -1.0;
+        let view_matrix = self.view_matrix
+            * Mat4::from_translation(clip_pos)
+            * Mat4::from_cols_array_2d(&reflect_matrix)
+            * Mat4::from_translation(-clip_pos);
+
+        let clip_pos = view_matrix.transform_point3(clip_pos);
+        let clip_norm = view_matrix.transform_vector3(clip_norm).normalize();
+        let clip_plane = clip_norm.extend(-clip_norm.dot(clip_pos));
+        let proj = oblique_projection_matrix(proj, clip_plane);
+
+        for pipeline in self.pipelines.mirror.iter() {
             let data = pipeline.get_art_idx().map(|idx| art_objs[idx].data).unwrap_or_else(|| {
                 ArtData {
                     dist_to_camera_sqr: f32::MAX,
@@ -635,14 +636,8 @@ impl App {
                     ..Default::default()
                 }
             });
-            let (_, _, trans) = self.mirror_matrix.to_scale_rotation_translation();
+
             let data = Some(data);
-            let mut reflect_matrix = Mat4::IDENTITY.to_cols_array_2d();
-            reflect_matrix[0][0] = -1.0;
-            let view_matrix = self.view_matrix
-                * Mat4::from_translation(trans)
-                * Mat4::from_cols_array_2d(&reflect_matrix)
-                * Mat4::from_translation(-trans);
             let res = pipeline.update_uniform_buffer(image_idx, view_matrix, proj, time, data);
             if let Err(err) = res {
                 log::error!("failed to update uniforms: {err:?}");
@@ -651,20 +646,20 @@ impl App {
     }
 
     fn update_command_buffers(&mut self) {
-        self.command_buffers = get_command_buffers(
+        self.command_buffers_scene = get_command_buffers(
             self.fences.len(),
             &self.command_buffer_allocator,
             &self.queue,
-            &self.pipelines,
-            &self.pipeline_order,
+            &self.pipelines.scene,
+            &self.pipelines.order,
             &self.subpass_scene,
         );
         self.command_buffers_mirror = get_command_buffers(
             self.fences.len(),
             &self.command_buffer_allocator,
             &self.queue,
-            &self.pipelines_mirror,
-            &[0],
+            &self.pipelines.mirror,
+            &self.pipelines.order,
             &self.subpass_mirror,
         );
     }

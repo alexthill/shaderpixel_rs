@@ -54,11 +54,15 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             model: model_square.clone(),
             shader_vert: shader_2d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mirror.frag")),
+            options: vec![
+                ArtOption::checkbox("Invert", false),
+            ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.5),
-                Quat::from_rotation_y(90_f32.to_radians()),
-                [5.99, 1.5, -7.5].into(),
+                Vec3::splat(1.0),
+                Quat::from_rotation_y(-90_f32.to_radians()),
+                [-5.99, 1.0, -1.0].into(),
             )),
+            is_mirror: true,
             ..Default::default()
         },
         ArtObject {

@@ -21,6 +21,7 @@ pub struct ArtObject {
     pub enable_pipeline: bool,
     pub enable_depth_test: bool,
     pub container_scale: Vec3,
+    pub is_mirror: bool,
 }
 
 impl ArtObject {
@@ -43,6 +44,7 @@ impl Default for ArtObject {
             enable_pipeline: true,
             enable_depth_test: true,
             container_scale: Vec3::splat(1.),
+            is_mirror: false,
         }
     }
 }

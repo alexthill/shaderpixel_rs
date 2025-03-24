@@ -48,6 +48,7 @@ pub struct MyPipelineCreateInfo {
     pub enable_pipeline: bool,
     pub enable_depth_test: bool,
     pub cull_mode: CullMode,
+    pub mirror_buffer: Option<Arc<ImageView>>,
 }
 
 impl Default for MyPipelineCreateInfo {
@@ -59,6 +60,7 @@ impl Default for MyPipelineCreateInfo {
             enable_pipeline: true,
             enable_depth_test: true,
             cull_mode: CullMode::Back,
+            mirror_buffer: None,
         }
     }
 }
@@ -80,6 +82,7 @@ pub struct MyPipeline {
     name: String,
     art_idx: Option<usize>,
     texture: Option<Texture>,
+    subpass: Subpass,
     pipeline: Option<Arc<GraphicsPipeline>>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
     geometry: Geometry,
@@ -106,7 +109,6 @@ impl MyPipeline {
         frames_in_flight: usize,
         uniform_buffer_allocator: &SubbufferAllocator,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-        mirror_buffer: Option<Arc<ImageView>>,
     ) -> anyhow::Result<Self> {
         log::debug!("creating pipeline {}", create_info.name);
 
@@ -126,6 +128,7 @@ impl MyPipeline {
             art_idx,
             texture,
             pipeline: None,
+            subpass,
             descriptor_sets: None,
             geometry,
             uniform_buffers_vert,
@@ -134,12 +137,11 @@ impl MyPipeline {
             fs: create_info.fs,
             enable_pipeline: create_info.enable_pipeline,
             enable_depth_test: create_info.enable_depth_test,
-            mirror_buffer,
+            mirror_buffer: create_info.mirror_buffer,
             cull_mode: create_info.cull_mode,
         };
         pipeline.update_pipeline(
             device,
-            subpass,
             viewport,
             descriptor_set_allocator,
         )?;
@@ -188,7 +190,7 @@ impl MyPipeline {
         if !self.enable_pipeline {
             false
         } else if self.vs.reload(forced) | self.fs.reload(forced) {
-            self.pipeline.take().is_none()
+            self.pipeline.take().is_some()
         } else {
             false
         }
@@ -223,7 +225,6 @@ impl MyPipeline {
     pub fn update_pipeline(
         &mut self,
         device: Arc<Device>,
-        subpass: Subpass,
         viewport: Viewport,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
@@ -243,7 +244,7 @@ impl MyPipeline {
                 self.geometry.definition(&vs_entry)?,
                 vs_entry,
                 fs_entry,
-                subpass,
+                self.subpass.clone(),
                 viewport,
                 self.enable_depth_test,
                 self.cull_mode,
@@ -370,5 +371,18 @@ impl MyPipeline {
             },
         )?;
         Ok(pipeline)
+    }
+}
+
+
+pub struct MyPipelines {
+    pub order: Vec<usize>,
+    pub scene: Vec<MyPipeline>,
+    pub mirror: Vec<MyPipeline>,
+}
+
+impl MyPipelines {
+    pub fn iter_mut(&mut self, skip: usize) -> impl Iterator<Item = &mut MyPipeline> {
+        self.scene.iter_mut().skip(skip).chain(self.mirror.iter_mut().skip(skip))
     }
 }

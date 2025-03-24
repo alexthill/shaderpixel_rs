@@ -2,6 +2,7 @@ use super::pipeline::MyPipeline;
 
 use std::sync::Arc;
 
+use glam::{Mat4, Vec4};
 use vulkano::{
     command_buffer::{
         allocator::StandardCommandBufferAllocator,
@@ -240,7 +241,6 @@ pub fn get_framebuffers(
     msaa_sample_count: SampleCount,
     mirror_buffer: &Arc<ImageView>,
 ) -> Vec<Arc<Framebuffer>> {
-    println!("image {:#?}", images[0]);
     let intermediary = ImageView::new_default(
         Image::new(
             memory_allocator.clone(),
@@ -291,10 +291,9 @@ pub fn get_framebuffers(
 
     images
         .iter()
-        .enumerate()
-        .map(|(image_i, image)| {
+        .map(|image| {
             let view = ImageView::new_default(image.clone()).unwrap();
-            let fb = Framebuffer::new(
+            Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
                     attachments: vec![
@@ -307,11 +306,7 @@ pub fn get_framebuffers(
                     ..Default::default()
                 },
             )
-            .unwrap();
-            for (i, a) in fb.attachments().iter().enumerate() {
-                log::info!("{image_i}:{i}: {a:#?}");
-            }
-            fb
+            .unwrap()
         })
         .collect::<Vec<_>>()
 }
@@ -359,34 +354,6 @@ pub fn get_primary_command_buffer(
     }
     builder.end_render_pass(Default::default())?;
     Ok(builder.build()?)
-}
-
-use vulkano::image::{ImageLayout, ImageSubresourceRange};
-use vulkano::sync::{AccessFlags, ImageMemoryBarrier};
-
-fn _get_image_memory_barrier(
-    image: Arc<Image>,
-) -> ImageMemoryBarrier {
-    let format = image.format();
-    let mut barrier = ImageMemoryBarrier::image(image);
-    barrier.src_access = AccessFlags::SHADER_WRITE;
-    barrier.dst_access = AccessFlags::SHADER_READ;
-    barrier.old_layout = ImageLayout::Undefined;
-    barrier.new_layout = ImageLayout::ShaderReadOnlyOptimal;
-    barrier.subresource_range = ImageSubresourceRange::from_parameters(format, 1, 1);
-    barrier
-        /*
-        src_stages: PipelineStages,
-        src_access: AccessFlags,
-        dst_stages: PipelineStages,
-        dst_access: AccessFlags,
-        old_layout: ImageLayout,
-        new_layout: ImageLayout,
-        queue_family_ownership_transfer: Option<QueueFamilyOwnershipTransfer>,
-        image,
-        subresource_range: ImageSubresourceRange,
-        ..Default::default()
-        */
 }
 
 pub fn get_command_buffers(
@@ -456,4 +423,23 @@ pub fn find_depth_format(device: &PhysicalDevice) -> Option<Format> {
             ..Default::default()
         }).ok().is_some()
     })
+}
+
+/// Creates a projection matrix with an oblique near clipping plane.
+/// See <https://terathon.com/lengyel/Lengyel-Oblique.pdf>
+/// and <https://qgu.io/blog/2020/10/30/oblique-clipping-plane/> for vulkan adaptation.
+pub fn oblique_projection_matrix(matrix: Mat4, clip_plane: Vec4) -> Mat4 {
+    let inv = matrix.inverse();
+    let mut matrix = matrix.to_cols_array();
+    let c = inv.transpose() * clip_plane;
+    let q = inv * Vec4::new(c.x.signum(), c.y.signum(), 1., 1.);
+    let m4 = Vec4::new(matrix[3], matrix[7], matrix[11], matrix[15]);
+    let m3 = (m4.dot(q) / clip_plane.dot(q)) * clip_plane;
+
+    matrix[2] = m3.x;
+    matrix[6] = m3.y;
+    matrix[10] = m3.z;
+    matrix[14] = m3.w;
+
+    Mat4::from_cols_array(&matrix)
 }
