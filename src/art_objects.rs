@@ -5,10 +5,11 @@ use crate::{
     vulkan::HotShader,
 };
 
+use std::f32::consts::FRAC_1_SQRT_2;
 use std::sync::Arc;
 
 use egui::Color32;
-use glam::{Mat4, Quat, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec3};
 
 pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
     let model_square = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/square.obj")?)?);
@@ -86,7 +87,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             shader_vert: shader_2d.clone(),
             shader_frag: shader_portal.clone(),
             data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(0.5),
+                Vec3::splat(1.0),
                 Quat::from_rotation_y(90_f32.to_radians()),
                 [6.0, 1.001, 2.0].into(),
             )),
@@ -95,7 +96,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                     data.inside_portal = !data.inside_portal;
                 }
             })),
-            container_scale: Vec3::new(1., 2., 0.01),
+            container_scale: Vec3::new(1., 1., 0.5),
             ..Default::default()
         },
         ArtObject {
@@ -272,12 +273,11 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
 }
 
 fn goes_through_rect(p0: Vec3, p1: Vec3, matrix: Mat4) -> bool {
-    const EPS: f32 = 0.001;
     let dir = p1 - p0;
     let p_norm = matrix.inverse().transpose().transform_vector3(Vec3::new(0., 0., 1.));
     let p_pos = matrix.transform_point3(Vec3::new(0., 0., 0.));
     let dot = p_norm.dot(dir);
-    if dot.abs() < EPS {
+    if dot == 0.0 {
         return false; // segment [p0,p1] parallel to plane
     }
     let w = p0 - p_pos;
@@ -286,13 +286,7 @@ fn goes_through_rect(p0: Vec3, p1: Vec3, matrix: Mat4) -> bool {
         return false; // segment [p0,p1] not passing through plane
     }
     let inter = p0 + dir * fac;
-    let corner0 = matrix * Vec4::new(-1., -2., 0., 1.);
-    let corner1 = matrix * Vec4::new(1., 2., 0., 1.);
-    (0..3).all(|i| {
-        if corner0[i] < corner1[i] {
-            (corner0[i] - EPS .. corner1[i] + EPS).contains(&inter[i])
-        } else {
-            (corner1[i] - EPS .. corner0[i] + EPS).contains(&inter[i])
-        }
-    })
+    let corner0 = matrix.transform_point3(Vec3::new(-1., -1., 0.) * FRAC_1_SQRT_2);
+    let corner1 = matrix.transform_point3(Vec3::new( 1.,  1., 0.) * FRAC_1_SQRT_2);
+    (corner0 - inter).dot(corner1 - inter) < 0.0
 }
