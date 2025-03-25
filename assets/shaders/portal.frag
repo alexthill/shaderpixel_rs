@@ -1,5 +1,6 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#include "truchet.frag"
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNorm;
@@ -13,7 +14,7 @@ layout(set = 0, binding = 1) uniform UniformBufferObject {
 
 layout(location = 0) out vec4 outColor;
 
-const float PI2 = 6.283;
+// const float PI2 = 6.283;
 const int NUM_STEPS = 256;
 const vec3 COLORS[] = {
     vec3(0.2),
@@ -171,6 +172,9 @@ void main() {
         }
     }
 
+    float depth;
+    vec3 color = truchetRaymarching(pos * 0.2, dir, depth, ubo.time);
+    // TODO compare my depth with either scene.x or scene.y to know if hit the portal or scene. Help Alex
     vec2 scene = raymarch_scene(pos, dir, 0.0, max_depth);
     if (scene.x < max_depth) {
         if (scene.y == 0.0) {
@@ -185,4 +189,5 @@ void main() {
     } else {
         outColor = vec4(COLORS[0], 1.0);
     }
+    outColor = vec4(color, 1.0); // Adding my shader here like a caveman
 }
