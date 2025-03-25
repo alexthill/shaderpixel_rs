@@ -331,6 +331,7 @@ impl ApplicationHandler for App {
         vk_app.mirror_matrix = self.art_objects[mirror_idx].data.matrix;
 
         // draw and remember if swapchain is dirty
+        vk_app.fov = self.gui_state.options.fov;
         self.swapchain_dirty = match vk_app.draw(self.time, Some(gui), &self.art_objects) {
             Ok(swapchain_dirty) => swapchain_dirty,
             Err(err) => {

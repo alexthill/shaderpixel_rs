@@ -20,6 +20,8 @@ pub struct Options {
     pub sun_movement: bool,
     /// Speed of sun in radians per second.
     pub sun_speed: f32,
+    /// FOV in degrees.
+    pub fov: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -226,6 +228,14 @@ impl GuiState {
         });
         ui.add(egui::Slider::new(&mut state.sun_speed, 0.0..=10.0));
         ui.end_row();
+
+        ui.label("FOV").on_hover_ui(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Change the field of view.");
+            });
+        });
+        ui.add(egui::Slider::new(&mut state.fov, 1.0..=179.0).suffix("°"));
+        ui.end_row();
     }
 
     fn draw_fps_chart(ui: &mut Ui, frame_timings: &VecDeque<Duration>) {
@@ -302,6 +312,7 @@ impl Default for GuiState {
                 theme: Theme::Dark,
                 sun_movement: true,
                 sun_speed: 0.2,
+                fov: 75.,
             },
         }
     }

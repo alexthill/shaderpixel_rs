@@ -58,6 +58,7 @@ const SUBPASS_GUI: u32 = 2;
 pub struct App {
     pub view_matrix: Mat4,
     pub mirror_matrix: Mat4,
+    pub fov: f32,
 
     #[allow(dead_code)]
     instance: Arc<Instance>,
@@ -367,6 +368,7 @@ impl App {
         let mut app = Self {
             view_matrix: Mat4::IDENTITY,
             mirror_matrix: Mat4::IDENTITY,
+            fov: 75_f32,
             instance,
             device,
             queue,
@@ -588,7 +590,7 @@ impl App {
         let aspect_ratio = self.swapchain.image_extent()[0] as f32
             / self.swapchain.image_extent()[1] as f32;
         let proj = Mat4::perspective_rh(
-            75_f32.to_radians(),
+            self.fov.to_radians(),
             aspect_ratio,
             0.01,
             200.0,
