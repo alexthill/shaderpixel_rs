@@ -61,16 +61,12 @@ float sdf_portal_effect(vec3 p) {
     p -= vec3(0.0, -0.25, 0.0);
     p *= 0.5;
     p.zy *= rot2(radians(90.));
-    // p.xz *= rot2(ubo.time * 0.5);
 
     objId[0] = maxDist;
     objId[1] = maxDist;
 
     float portal = sdRotatingTorus(p, 0.05);
-    // float d_empty_box = sdf_box(pos - vec3(0.0, -1.25, 0.0), vec3(1.0, 0.25, 0.4));
-    // portal = op_substraction(d_empty_box, portal);
     return portal;
-    // return sdRotatingTorus(p, 0.05);
 }
 
 vec2 sdf_portal(vec3 p) {
@@ -81,42 +77,7 @@ vec2 sdf_portal(vec3 p) {
     float d_portal = sdf_cylinder(p_rot - vec3(0.0, 0.0, 0.25), 0.01, 0.999);
     vec2 portal = vec2(d_portal, 0.0);
 
-    float d_effect = sdf_portal_effect(p);
-    portal = op_union(portal, vec2(d_effect, 2.0));
-
-    float d_empty_box = sdf_box(pos - vec3(0.0, -1.25, 0.0), vec3(1.0, 0.25, 0.4));
-    // return vec2(d_empty_box, 2.0);
-
-    portal = op_substraction(vec2(d_empty_box, 2.0), portal);
-
     return portal;
-}
-
-vec2 sdf_scene(vec3 p) {
-    vec3 s = vec3(2.0);
-    vec3 q = p - s * clamp(round(p / s), vec3(-00.0), vec3(00.0));
-    q.y += sin(round(p.z / s.z) + ubo.time) * 0.2;
-
-    float d_sphere = sdf_sphere(q, 0.5);
-    vec2 scene = vec2(d_sphere, 1.0);
-
-    float d_empty_box = sdf_box(p, vec3(3.0, 3.0, 3.0));
-    scene = op_substraction(vec2(d_empty_box, 1.0), scene);
-
-    if (inside) {
-        scene = op_union(scene, sdf_portal(p));
-    }
-
-    return scene;
-}
-
-vec3 estimate_normal(vec3 p) {
-    const float eps = 0.0001;
-    return normalize(vec3(
-        sdf_scene(vec3(p.x + eps, p.y, p.z)).x - sdf_scene(vec3(p.x - eps, p.y, p.z)).x,
-        sdf_scene(vec3(p.x, p.y + eps, p.z)).x - sdf_scene(vec3(p.x, p.y - eps, p.z)).x,
-        sdf_scene(vec3(p.x, p.y, p.z + eps)).x - sdf_scene(vec3(p.x, p.y, p.z - eps)).x
-    ));
 }
 
 float raymarch_portal_effect(vec3 pos, vec3 dir, float depth, float max_depth) {
@@ -129,22 +90,6 @@ float raymarch_portal_effect(vec3 pos, vec3 dir, float depth, float max_depth) {
         depth += dist;
     }
     return depth;
-}
-
-vec2 raymarch_scene(vec3 pos, vec3 dir, float depth, float max_depth) {
-    vec2 scene;
-    for (int i = 0; i < NUM_STEPS; i++) {
-        scene = sdf_scene(pos + depth * dir);
-        float dist = scene.x;
-        if (dist < depth * 0.001) {
-            return vec2(depth, scene.y);
-        }
-        depth += dist;
-        if (depth >= max_depth) {
-            return vec2(max_depth, 1.0);
-        }
-    }
-    return vec2(depth, scene.y);
 }
 
 vec2 raymarch_portal(vec3 pos, vec3 dir, float depth, float max_depth) {
@@ -163,18 +108,6 @@ vec2 raymarch_portal(vec3 pos, vec3 dir, float depth, float max_depth) {
     return vec2(depth, scene.y);
 }
 
-vec3 calc_light(vec3 pos, int color_id) {
-    vec3 ambient_color = COLORS[color_id];
-    vec3 diffuse_color = COLORS[color_id];
-
-    inside = true; // this is needed to get normal for portal effect
-    vec3 normal = estimate_normal(pos);
-    vec3 light_dir = normalize(ubo.light_pos.xyz);
-    float lambertian = max(dot(light_dir, normal), 0.0);
-
-    return ambient_color + lambertian * diffuse_color;
-}
-
 void main() {
     vec3 pos = inside ? cameraPos : fragPos;
     vec3 dir = normalize(fragPos - cameraPos);
@@ -183,9 +116,10 @@ void main() {
     
     time = mod(ubo.time, 100.);
 
+    // portal effect variable
     railColor = vec3(1);
     ballnb = 100;
-    railRotationSpeed = 2.; 
+    railRotationSpeed = 3.;
     railRotNb = 3;
 
     float portal_dist = raymarch_portal_effect(cameraPos, dir, 0.0, max_depth);
@@ -208,12 +142,17 @@ void main() {
     }
 
     railColor = vec3(0);
-    ballnb = 5;
+    ballnb = clamp(int(ubo.options[0]), 1, 30); // default is 5
     railRotationSpeed = 1.;
-
+    railRotNb = int(ubo.options[1]); // default is 3
+    
     float depth;
     vec3 color = truchetRaymarching(pos / dim_scale, dir, depth);
-    vec2 scene = raymarch_scene(pos, dir, 0.0, max_depth);
+    vec2 scene = raymarch_portal(pos, dir, 0.0, max_depth);
+
+    if(bool(ubo.options[2])){
+        color = 1.0 - color;
+    }
 
     if(portal_dist < depth * dim_scale){
         outColor = vec4(portal_color, 1.0);

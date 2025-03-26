@@ -87,17 +87,22 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             model: model_cube.clone(),
             shader_vert: shader_2d.clone(),
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/portal.frag")),
+            options: vec![
+                ArtOption::slider_i32("Ball number", 5, 1, 20),
+                ArtOption::slider_i32("Rail Rotation", 3, -10, 10),
+                ArtOption::checkbox("Invert", false),
+            ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(1.0),
                 Quat::from_rotation_y(90_f32.to_radians()),
-                [6.0, 1.001, 2.0].into(),
+                [6.0, 1.501, 2.0].into(),
             )),
             fn_update_data: Some(Box::new(|data, update| {
                 if goes_through_rect(update.old_position, update.new_position, data.matrix) {
                     data.inside_portal = !data.inside_portal;
                 }
             })),
-            container_scale: Vec3::new(1., 1., 0.5),
+            container_scale: Vec3::new(1., 1.5, 0.5),
             ..Default::default()
         },
         ArtObject {
