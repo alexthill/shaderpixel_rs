@@ -47,7 +47,7 @@ impl Camera {
     }
 
     pub fn view_matrix(&self) -> Mat4 {
-        return Mat4::from_rotation_x(self.angle_pitch)
+        Mat4::from_rotation_x(self.angle_pitch)
             * Mat4::from_rotation_y(self.angle_yaw)
             * Mat4::from_translation(-self.position)
     }

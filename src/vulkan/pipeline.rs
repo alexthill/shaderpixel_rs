@@ -188,6 +188,9 @@ impl MyPipeline {
     /// Does nothing if pipeline is not enabled.
     pub fn reload_shaders(&mut self, forced: bool) -> bool {
         if !self.enable_pipeline {
+            if self.vs.has_changed() | self.fs.has_changed() {
+                self.pipeline.take();
+            }
             false
         } else if self.vs.reload(forced) | self.fs.reload(forced) {
             self.pipeline.take().is_some()
@@ -229,6 +232,7 @@ impl MyPipeline {
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
         if !self.enable_pipeline {
+            self.pipeline.take();
             return Ok(());
         }
 
@@ -301,6 +305,7 @@ impl MyPipeline {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_pipeline(
         device: Arc<Device>,
         vertex_input_state: VertexInputState,

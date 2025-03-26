@@ -134,6 +134,11 @@ impl HotShader {
         Ok(inner.module.clone())
     }
 
+    pub fn has_changed(&self) -> bool {
+        let inner = self.inner.read().unwrap();
+        inner.code_has_changed || inner.is_compiling
+    }
+
     /// Reloads shader if changed or `forced` is `true`.
     /// Returns `true` if shader is recompiling.
     pub fn reload(self: &Arc<Self>, forced: bool) -> bool {
