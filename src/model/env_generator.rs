@@ -10,7 +10,7 @@ pub fn default_env() -> Obj {
         Wall { start: [6., -14.], end: [6.2, 0.], height: 3. },
 
         // wall for mirror
-        Wall { start: [-6.2, -3.], end: [-6.0, 1.], height: 3. },
+        Wall { start: [-6.2, -13.], end: [-6.0, 1.], height: 3. },
 
         /* currently replaced by some pillar shaders
         // podests row left

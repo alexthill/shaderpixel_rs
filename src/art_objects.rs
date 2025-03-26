@@ -75,9 +75,9 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 ArtOption::checkbox("Fog", false),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
-                Vec3::splat(1.0),
+                Vec3::new(6.0, 1., 1.0),
                 Quat::from_rotation_y(-90_f32.to_radians()),
-                [-5.99, 1.0, -1.0].into(),
+                [-5.99, 1.0, -6.0].into(),
             )),
             is_mirror: true,
             ..Default::default()

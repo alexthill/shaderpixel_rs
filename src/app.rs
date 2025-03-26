@@ -59,6 +59,8 @@ pub struct App {
     /// Whether the application is in fullscreen or not.
     is_fullscreen: bool,
     skybox_rotation_angle: f32,
+    box_idx: Option<usize>,
+    mirror_idx: Option<usize>,
 }
 
 impl App {
@@ -84,6 +86,8 @@ impl App {
         self.app = Some((window, vk_app, gui));
         self.swapchain_dirty = true;
         self.camera.position = START_POSITION;
+        self.box_idx = self.art_objects.iter().position(|art| art.name == "Portalbox");
+        self.mirror_idx = self.art_objects.iter().position(|art| art.name == "Mirror");
 
         Ok(())
     }
@@ -155,6 +159,9 @@ impl ApplicationHandler for App {
                         self.camera.angle_pitch = 0.;
                         self.camera.position = START_POSITION;
                         self.scroll_lines = 0.0;
+                        for art_obj in self.art_objects.iter_mut() {
+                            art_obj.data.inside_portal = false;
+                        }
                     }
                     _ => {}
                 }
@@ -267,7 +274,6 @@ impl ApplicationHandler for App {
         }
 
         // handle portal
-        let box_idx = self.art_objects.iter().position(|art| art.name == "Portalbox").unwrap();
         if let Some(portal_idx)
             = self.art_objects.iter().position(|art| art.data.inside_portal)
         {
@@ -275,20 +281,24 @@ impl ApplicationHandler for App {
             for art in self.art_objects.iter_mut() {
                 art.enable_pipeline = art.data.dist_to_camera_sqr > portal_dist;
             }
-            self.art_objects[box_idx].enable_pipeline = true;
-            self.art_objects[box_idx].data.matrix = self.art_objects[portal_idx].data.matrix;
-            self.art_objects[box_idx].shader_vert = self.art_objects[portal_idx].shader_vert.clone();
-            self.art_objects[box_idx].shader_frag = self.art_objects[portal_idx].shader_frag.clone();
+            let portal = &self.art_objects[portal_idx];
+            let data = (portal.data.matrix, portal.shader_vert.clone(), portal.shader_frag.clone());
+            let box_obj = &mut self.art_objects[self.box_idx.unwrap()];
+            box_obj.enable_pipeline = true;
+            box_obj.data.matrix = data.0;
+            box_obj.shader_vert = data.1.clone();
+            box_obj.shader_frag = data.2.clone();
         } else {
             for art in self.art_objects.iter_mut() {
                 art.enable_pipeline = true;
             }
-            self.art_objects[box_idx].enable_pipeline = false;
+            self.art_objects[self.box_idx.unwrap()].enable_pipeline = false;
         }
 
         // handle mirror
-        let mirror_idx = self.art_objects.iter().position(|art| art.name == "Mirror").unwrap();
-        vk_app.mirror_matrix = self.art_objects[mirror_idx].data.matrix;
+        if let Some(mirror_idx) = self.mirror_idx {
+            vk_app.mirror_matrix = self.art_objects[mirror_idx].data.matrix;
+        }
 
         // draw and remember if swapchain is dirty
         vk_app.fov = self.gui_state.options.fov;
