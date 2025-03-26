@@ -207,8 +207,7 @@ pub fn get_render_pass(
                 input: [],
             },
         ],
-    )
-    .unwrap()
+    ).unwrap()
 }
 
 pub fn get_mirror_buffer(
@@ -253,10 +252,8 @@ pub fn get_framebuffers(
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+        ).unwrap(),
+    ).unwrap();
     let depth_buffer_no_msaa = ImageView::new_default(
         Image::new(
             memory_allocator.clone(),
@@ -268,10 +265,8 @@ pub fn get_framebuffers(
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+        ).unwrap(),
+    ).unwrap();
     let depth_buffer = ImageView::new_default(
         Image::new(
             memory_allocator.clone(),
@@ -284,10 +279,8 @@ pub fn get_framebuffers(
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+        ).unwrap(),
+    ).unwrap();
 
     images
         .iter()
@@ -305,8 +298,7 @@ pub fn get_framebuffers(
                     ],
                     ..Default::default()
                 },
-            )
-            .unwrap()
+            ).unwrap()
         })
         .collect::<Vec<_>>()
 }

@@ -94,21 +94,19 @@ impl App {
         window: Arc<Window>,
         model: NormalizedObj,
         art_objs: &[ArtObject],
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         log::debug!("creating vulkan app");
 
         let dimensions = window.inner_size();
         let library = vulkano::VulkanLibrary::new()
-            .expect("no local Vulkan library/DLL");
+            .context("no local Vulkan library/DLL")?;
 
         let (debug_extensions, debug_layers) = get_debug_extensions_and_layers();
-        for layer in debug_layers.iter() {
-            if !check_layer_support(&library, layer).unwrap() {
-                panic!("Layer {layer} is not supported");
-            }
+        if !(check_layer_support(&library, &debug_layers)?) {
+            return Err(anyhow::anyhow!("not all required layers are supported"));
         }
         let required_extensions = Surface::required_extensions(window.as_ref())
-            .expect("failed to get required extensions");
+            .context("failed to get required extensions")?;
         let enabled_extensions = required_extensions.union(&debug_extensions);
 
         let instance = Instance::new(
@@ -119,13 +117,13 @@ impl App {
                 enabled_extensions,
                 ..Default::default()
             },
-        )
-        .expect("failed to create instance");
+        ).context("failed to create instance")?;
 
         let debug = setup_debug_callback(Arc::clone(&instance))
-            .expect("failed to setup debug callback");
+            .context("failed to setup debug callback")?;
 
-        let surface = Surface::from_window(instance.clone(), window).unwrap();
+        let surface = Surface::from_window(instance.clone(), window)
+            .context("failed to get surface")?;
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -153,15 +151,14 @@ impl App {
                 enabled_features: device_features,
                 ..Default::default()
             },
-        )
-        .expect("failed to create device");
+        ).context("failed to create device")?;
 
         let queue = queues.next().unwrap();
 
         let (swapchain, images) = {
             let caps = physical_device
                 .surface_capabilities(&surface, Default::default())
-                .expect("failed to get surface capabilities");
+                .context("failed to get surface capabilities")?;
 
             let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
             let image_format = physical_device
@@ -184,8 +181,7 @@ impl App {
                     present_mode: PresentMode::Fifo,
                     ..Default::default()
                 },
-            )
-            .unwrap()
+            ).context("failed to create swapchain")?
         };
         let frames_in_flight = images.len();
 
@@ -194,7 +190,7 @@ impl App {
         let msaa_sample_count = select_msaa_sample_count(&physical_device);
         log::debug!("selected msaa sample count: {msaa_sample_count:?}");
         let depth_format = find_depth_format(&physical_device)
-            .expect("failed to find a supported depth format");
+            .context("failed to find a supported depth format")?;
         log::debug!("selected depth format: {depth_format:?}");
 
         let render_pass = get_render_pass(
@@ -219,8 +215,8 @@ impl App {
             &mirror_buffer,
         );
 
-        let vs = vs::load(device.clone()).expect("failed to create shader module");
-        let fs = fs::load(device.clone()).expect("failed to create shader module");
+        let vs = vs::load(device.clone()).context("failed to load vert shader")?;
+        let fs = fs::load(device.clone()).context("failed to load frag shader")?;
 
         let viewport = Viewport {
             offset: [0.0, 0.0],
@@ -256,7 +252,7 @@ impl App {
             VertexType::VertexNorm,
             memory_allocator.clone(),
             Vec3::splat(1.),
-        ).expect("failed to parse model");
+        ).context("failed to parse model")?;
         let mut pipelines_scene = {
             let pipeline = MyPipeline::new(
                 MyPipelineCreateInfo {
@@ -274,7 +270,7 @@ impl App {
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-            ).unwrap();
+            ).context("failed to create pipeline")?;
             vec![pipeline]
         };
         let mut pipelines_mirror = {
@@ -295,7 +291,7 @@ impl App {
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-            ).unwrap();
+            ).context("failed to create pipeline")?;
             vec![pipeline]
         };
 
@@ -310,7 +306,7 @@ impl App {
                 VertexType::VertexNorm,
                 memory_allocator.clone(),
                 art_obj.container_scale,
-            ).expect("failed to parse model");
+            ).context("failed to parse model")?;
             let texture = art_obj.texture.as_ref().and_then(|path| {
                 Texture::new(
                     path,
@@ -336,7 +332,7 @@ impl App {
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-            ).unwrap();
+            ).context("failed to create pipeline")?;
             pipelines_scene.push(pipeline);
 
             let pipeline = MyPipeline::new(
@@ -355,7 +351,7 @@ impl App {
                 frames_in_flight,
                 &uniform_buffer_allocator,
                 descriptor_set_allocator.clone(),
-            ).unwrap();
+            ).context("failed to create pipeline")?;
             pipelines_mirror.push(pipeline);
         }
 
@@ -392,7 +388,7 @@ impl App {
             _debug: debug,
         };
         app.update_command_buffers();
-        app
+        Ok(app)
     }
 
     pub fn get_queue(&self) -> &Arc<Queue> { &self.queue }
@@ -511,7 +507,7 @@ impl App {
         // wait for the fence related to this image to finish
         // (normally this would be the oldest fence)
         if let Some(image_fence) = &self.fences[image_i] {
-            image_fence.wait(None).unwrap();
+            image_fence.wait(None).context("failed to wait for fence")?;
         }
 
         let previous_future = match self.fences[self.previous_fence_i].clone() {
@@ -542,7 +538,7 @@ impl App {
         let future = previous_future
             .join(acquire_future)
             .then_execute(self.queue.clone(), command_buffer)
-            .unwrap()
+            .context("failed to execute future")?
             .then_swapchain_present(
                 self.queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_i as u32),

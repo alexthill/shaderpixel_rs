@@ -70,7 +70,7 @@ impl App {
         let window = Arc::new(window);
 
         let model = default_env().normalize()?;
-        let vk_app = VkApp::new(Arc::clone(&window), model, &self.art_objects);
+        let vk_app = VkApp::new(Arc::clone(&window), model, &self.art_objects)?;
         let gui = Gui::new_with_subpass(
             event_loop,
             vk_app.get_swapchain().surface().clone(),
@@ -98,7 +98,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let (window, _, gui) = self.app.as_mut().unwrap();
+        let Some((window, _, gui)) = self.app.as_mut() else { return };
         if gui.update(&event) {
             return;
         }
