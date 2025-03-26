@@ -180,20 +180,22 @@ void main() {
     vec3 dir = normalize(fragPos - cameraPos);
     float max_depth = 100.0;
     float dim_scale = 5.; // dimension_scale
-
+    
     time = mod(ubo.time, 100.);
-    railColor = vec3(sin(time) * 2.0 + 3.0);
+
+    railColor = vec3(1);
     ballnb = 100;
     railRotationSpeed = 2.; 
-
+    railRotNb = 3;
 
     float portal_dist = raymarch_portal_effect(cameraPos, dir, 0.0, max_depth);
-    if(portal_dist < max_depth){
-        outColor = vec4(sdfColor(cameraPos + dir * portal_dist), 1.0);
-        return;
-    }
+    vec3 portal_color = sdfColor(cameraPos + dir * portal_dist);
 
     if (!inside) {
+        if(portal_dist < max_depth){
+            outColor = vec4(portal_color, 1.0);
+            return;
+        }
         vec2 portal = raymarch_portal(cameraPos, dir, 0.0, max_depth);
         if (portal.x <= 0.0) {
             outColor = vec4(COLORS[0], 0.7);
@@ -201,11 +203,6 @@ void main() {
         }
         if (portal.x >= max_depth) {
             discard;
-            return;
-        }
-        if (portal.y == 2.0) {
-            // outColor = vec4(calc_light(cameraPos + portal.x * dir, int(portal.y)), 1.0);
-            outColor = vec4(sdfColor(pos), 1.0);
             return;
         }
     }
@@ -216,22 +213,13 @@ void main() {
 
     float depth;
     vec3 color = truchetRaymarching(pos / dim_scale, dir, depth);
-    // TODO compare my depth with either scene.x or scene.y to know if hit the portal or scene. Help Alex
     vec2 scene = raymarch_scene(pos, dir, 0.0, max_depth);
+
+    if(portal_dist < depth * dim_scale){
+        outColor = vec4(portal_color, 1.0);
+        return;
+    }
     if(scene.x < depth * dim_scale)
         discard;
     outColor = vec4(color, 1.0); // Adding my shader here like a caveman
-    // if (scene.x < max_depth) {
-    //     if (scene.y == 0.0) {
-    //         if (scene.x <= 0.0) {
-    //             outColor = vec4(COLORS[0], 0.7);
-    //         } else {
-    //             discard;
-    //         }
-    //     } else {
-    //         outColor = vec4(calc_light(pos + scene.x * dir, int(scene.y)), 1.0);
-    //     }
-    // } else {
-    //     outColor = vec4(COLORS[0], 1.0);
-    // }
 }
