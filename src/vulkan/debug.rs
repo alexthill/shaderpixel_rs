@@ -16,13 +16,14 @@ const ENABLE_VALIDATION_LAYERS: bool = true;
 #[cfg(not(debug_assertions))]
 const ENABLE_VALIDATION_LAYERS: bool = false;
 
-pub fn check_layer_support(library: &VulkanLibrary, layer_name: &str) -> Result<bool, VulkanError> {
+pub fn check_layer_support<S>(library: &VulkanLibrary, layers: &[S]) -> Result<bool, VulkanError>
+where S: AsRef<str>
+{
+    let mut count = 0;
     for layer in library.layer_properties()? {
-        if layer.name() == layer_name {
-            return Ok(true);
-        }
+        count += layers.iter().any(|l| layer.name() == l.as_ref()) as usize;
     }
-    Ok(false)
+    Ok(count == layers.len())
 }
 
 pub fn get_debug_extensions_and_layers() -> (InstanceExtensions, Vec<String>) {

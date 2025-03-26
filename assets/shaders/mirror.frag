@@ -10,15 +10,21 @@ layout(set = 0, binding = 1) uniform UniformBufferObject {
     float time;
 } ubo;
 
-layout(input_attachment_index = 0, set = 0, binding = 3) uniform subpassInput mirror;
+layout(input_attachment_index = 0, set = 0, binding = 3) uniform subpassInput mirror_color;
+layout(input_attachment_index = 0, set = 0, binding = 4) uniform subpassInput mirror_depth;
 
 layout(location = 0) out vec4 outColor;
 
 bool invert = bool(ubo.options[0]);
+bool fog = bool(ubo.options[1]);
 
 void main() {
-    vec3 color = subpassLoad(mirror).rgb;
+    vec3 color = subpassLoad(mirror_color).rgb;
+    float depth = subpassLoad(mirror_depth).r;
 
+    if (fog) {
+        color *= 1.0 - depth;
+    }
     if (invert) {
         color = 1.0 - color;
     }

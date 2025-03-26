@@ -155,7 +155,13 @@ pub fn get_render_pass(
     vulkano::ordered_passes_renderpass!(
         device,
         attachments: {
-            mirror: {
+            mirror_depth: {
+                format: depth_format,
+                samples: 1,
+                load_op: Clear,
+                store_op: DontCare,
+            },
+            mirror_color: {
                 format: swapchain.image_format(),
                 samples: 1,
                 load_op: Clear,
@@ -166,12 +172,6 @@ pub fn get_render_pass(
                 samples: msaa_sample_count as u32,
                 load_op: Clear,
                 store_op: Store,
-            },
-            depth_stencil_no_msaa: {
-                format: depth_format,
-                samples: 1,
-                load_op: Clear,
-                store_op: DontCare,
             },
             depth_stencil: {
                 format: depth_format,
@@ -189,8 +189,8 @@ pub fn get_render_pass(
         passes: [
             // Mirror render pass
             {
-                color: [mirror],
-                depth_stencil: {depth_stencil_no_msaa},
+                color: [mirror_color],
+                depth_stencil: {mirror_depth},
                 input: [],
             },
             // Scene render pass
@@ -198,7 +198,7 @@ pub fn get_render_pass(
                 color: [intermediary],
                 color_resolve: [color],
                 depth_stencil: {depth_stencil},
-                input: [mirror],
+                input: [mirror_color, mirror_depth],
             },
             // Gui render pass
             {
@@ -207,13 +207,25 @@ pub fn get_render_pass(
                 input: [],
             },
         ],
-    )
-    .unwrap()
+    ).unwrap()
 }
 
-pub fn get_mirror_buffer(
+pub fn color_usage() -> ImageUsage {
+    ImageUsage::COLOR_ATTACHMENT
+        | ImageUsage::INPUT_ATTACHMENT
+        | ImageUsage::TRANSIENT_ATTACHMENT
+}
+
+pub fn depth_usage() -> ImageUsage {
+    ImageUsage::DEPTH_STENCIL_ATTACHMENT
+        | ImageUsage::INPUT_ATTACHMENT
+        | ImageUsage::TRANSIENT_ATTACHMENT
+}
+
+pub fn get_image_view(
     format: Format,
     extent: [u32; 3],
+    usage: ImageUsage,
     memory_allocator: Arc<dyn MemoryAllocator>,
 ) -> Arc::<ImageView> {
     ImageView::new_default(
@@ -223,9 +235,7 @@ pub fn get_mirror_buffer(
                 image_type: ImageType::Dim2d,
                 format,
                 extent,
-                usage: ImageUsage::COLOR_ATTACHMENT
-                    | ImageUsage::INPUT_ATTACHMENT
-                    | ImageUsage::TRANSIENT_ATTACHMENT,
+                usage,
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
@@ -239,7 +249,8 @@ pub fn get_framebuffers(
     render_pass: Arc<RenderPass>,
     memory_allocator: Arc<dyn MemoryAllocator>,
     msaa_sample_count: SampleCount,
-    mirror_buffer: &Arc<ImageView>,
+    mirror_color: &Arc<ImageView>,
+    mirror_depth: &Arc<ImageView>,
 ) -> Vec<Arc<Framebuffer>> {
     let intermediary = ImageView::new_default(
         Image::new(
@@ -253,25 +264,8 @@ pub fn get_framebuffers(
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let depth_buffer_no_msaa = ImageView::new_default(
-        Image::new(
-            memory_allocator.clone(),
-            ImageCreateInfo {
-                image_type: ImageType::Dim2d,
-                format: depth_format,
-                extent: images[0].extent(),
-                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT | ImageUsage::TRANSIENT_ATTACHMENT,
-                ..Default::default()
-            },
-            AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+        ).unwrap(),
+    ).unwrap();
     let depth_buffer = ImageView::new_default(
         Image::new(
             memory_allocator.clone(),
@@ -284,10 +278,8 @@ pub fn get_framebuffers(
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+        ).unwrap(),
+    ).unwrap();
 
     images
         .iter()
@@ -297,16 +289,15 @@ pub fn get_framebuffers(
                 render_pass.clone(),
                 FramebufferCreateInfo {
                     attachments: vec![
-                        mirror_buffer.clone(),
+                        mirror_depth.clone(),
+                        mirror_color.clone(),
                         intermediary.clone(),
-                        depth_buffer_no_msaa.clone(),
                         depth_buffer.clone(),
                         view,
                     ],
                     ..Default::default()
                 },
-            )
-            .unwrap()
+            ).unwrap()
         })
         .collect::<Vec<_>>()
 }
@@ -327,9 +318,9 @@ pub fn get_primary_command_buffer(
         .begin_render_pass(
             RenderPassBeginInfo {
                 clear_values: vec![
+                    Some(ClearValue::Depth(1.0)),       // mirror depth
                     Some([0.0, 0.8, 0.0, 1.0].into()),  // mirror color
                     Some([0.0, 0.0, 0.8, 1.0].into()),  // intermediary color
-                    Some(ClearValue::Depth(1.0)),       // depth no msaa
                     Some(ClearValue::Depth(1.0)),       // depth
                     None,                               // final color
                 ],
