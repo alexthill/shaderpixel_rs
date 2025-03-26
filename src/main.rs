@@ -1,6 +1,7 @@
 mod app;
 mod art;
 mod art_objects;
+mod camera;
 mod fs;
 mod gui;
 mod model;

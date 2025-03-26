@@ -14,10 +14,10 @@ use glam::{Mat4, Quat, Vec3};
 pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
     let model_square = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/square.obj")?)?);
     let model_cube = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/cube_inside.obj")?)?);
+    let model_teapot = Arc::new(NormalizedObj::from_reader(fs::load("assets/models/teapot.obj")?)?);
 
     let shader_2d = Arc::new(HotShader::new_vert("assets/shaders/art2d.vert"));
     let shader_3d = Arc::new(HotShader::new_vert("assets/shaders/art3d.vert"));
-    let shader_portal = Arc::new(HotShader::new_frag("assets/shaders/portal.frag"));
     let shader_pillar = Arc::new(HotShader::new_frag("assets/shaders/pillar.frag"));
 
     let mut art_objects = vec![
@@ -85,7 +85,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             name: "Portal".to_owned(),
             model: model_cube.clone(),
             shader_vert: shader_2d.clone(),
-            shader_frag: shader_portal.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/portal.frag")),
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(1.0),
                 Quat::from_rotation_y(90_f32.to_radians()),
@@ -110,6 +110,26 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             enable_pipeline: false,
             enable_depth_test: false,
             container_scale: Vec3::splat(100.),
+            ..Default::default()
+        },
+        ArtObject {
+            name: "Player".to_owned(),
+            model: model_teapot.clone(),
+            shader_vert: shader_2d.clone(),
+            shader_frag: Arc::new(HotShader::new_frag("assets/shaders/player.frag")),
+            fn_update_data: Some(Box::new(|data, update| {
+                let matrix = Mat4::from_scale_rotation_translation(
+                    Vec3::splat(0.4),
+                    Quat::from_rotation_x(-update.camera.angle_pitch)
+                        * Quat::from_rotation_y(90_f32.to_radians()),
+                    Vec3::new(0.0, -1.0, 1.0),
+                );
+                data.dist_to_camera_sqr = 0.;
+                data.matrix = Mat4::IDENTITY
+                    * Mat4::from_translation(update.camera.position)
+                    * Mat4::from_rotation_y(-update.camera.angle_yaw)
+                    * matrix;
+            })),
             ..Default::default()
         },
         ArtObject {

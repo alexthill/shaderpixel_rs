@@ -1,5 +1,6 @@
 use crate::{
     art::{ArtObject, ArtUpdateData},
+    camera::{Camera, KeyStates},
     gui::GuiState,
     model::{
         env_generator::default_env,
@@ -33,29 +34,6 @@ const START_POSITION: Vec3 = Vec3::from_array([0., 1.5, 3.]);
 struct FpsInfo {
     last_frame: Instant,
     frame_count: u32,
-}
-
-#[derive(Default)]
-struct Camera {
-    /// Camera yaw angle in radians.
-    angle_yaw: f32,
-    /// Camera pitch angle in radians.
-    angle_pitch: f32,
-    /// Camera position.
-    position: Vec3,
-    /// When in fly mode move into the direction the camera is looking, else move on the plane.
-    fly_mode: bool,
-}
-
-#[derive(Default)]
-struct KeyStates {
-    forward: bool,
-    backward: bool,
-    left: bool,
-    right: bool,
-    up: bool,
-    down: bool,
-    lmb: bool,
 }
 
 #[derive(Default)]
@@ -257,28 +235,9 @@ impl ApplicationHandler for App {
         let delta = elapsed * (self.scroll_lines * 0.4).exp();
         let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
         let y_ratio = self.cursor_delta[1] as f32 / extent.height as f32;
-        if self.key_states.lmb {
-            use std::f32::consts::PI;
-            self.camera.angle_yaw += x_ratio * PI;
-            self.camera.angle_pitch += y_ratio * PI;
-        }
+        self.camera.update(&self.key_states, delta, x_ratio, y_ratio);
         self.cursor_delta = [0, 0];
-        let translation = Vec4::from_array([
-            (self.key_states.left    as i8 - self.key_states.right    as i8) as f32,
-            (self.key_states.down    as i8 - self.key_states.up       as i8) as f32,
-            (self.key_states.forward as i8 - self.key_states.backward as i8) as f32,
-            0.
-        ]) * delta * 2.;
-        let rot = if self.camera.fly_mode {
-            Mat4::from_rotation_y(-self.camera.angle_yaw)
-                * Mat4::from_rotation_x(-self.camera.angle_pitch)
-        } else {
-            Mat4::from_rotation_y(-self.camera.angle_yaw)
-        };
-        self.camera.position += (rot * -translation).truncate();
-        vk_app.view_matrix = Mat4::from_rotation_x(self.camera.angle_pitch)
-            * Mat4::from_rotation_y(self.camera.angle_yaw)
-            * Mat4::from_translation(-self.camera.position);
+        vk_app.view_matrix = self.camera.view_matrix();
 
         // update options data for nearest_art
         if let Some(art) = nearest_art.as_mut() {
@@ -302,6 +261,7 @@ impl ApplicationHandler for App {
                     skybox_rotation_angle: self.skybox_rotation_angle,
                     old_position,
                     new_position: self.camera.position,
+                    camera: self.camera,
                 });
             }
         }

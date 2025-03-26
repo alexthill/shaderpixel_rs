@@ -307,7 +307,7 @@ impl App {
         for (art_idx, art_obj) in art_objs.iter().enumerate() {
             let geometry = Geometry::from_model(
                 &art_obj.model,
-                VertexType::VertexPos,
+                VertexType::VertexNorm,
                 memory_allocator.clone(),
                 art_obj.container_scale,
             ).expect("failed to parse model");

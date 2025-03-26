@@ -1,5 +1,8 @@
-use crate::model::obj::NormalizedObj;
-use crate::vulkan::HotShader;
+use crate::{
+    camera::Camera,
+    model::obj::NormalizedObj,
+    vulkan::HotShader,
+};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -54,6 +57,7 @@ pub struct ArtUpdateData {
     pub skybox_rotation_angle: f32,
     pub old_position: Vec3,
     pub new_position: Vec3,
+    pub camera: Camera,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

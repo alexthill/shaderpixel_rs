@@ -39,18 +39,11 @@ impl Geometry {
 
         let (vertex_buffer, index_buffer) = match vertex_type {
             VertexType::VertexPos => {
-                let vertices = model.vertices.iter().copied().map(|mut vertex| {
-                    vertex.pos_coords = (scale * Vec3::from(vertex.pos_coords)).into();
-                    VertexPos::new(vertex.pos_coords, vertex.tex_coords, vertex.normal)
-                }).collect::<Vec<_>>();
-                let (vb, ib) = Self::model_to_buffers(&vertices, &model.indices, memory_allocator)?;
+                let (vb, ib) = Self::model_to_buffers::<VertexPos>(model, scale, memory_allocator)?;
                 (vb.into_bytes(), ib)
             }
             VertexType::VertexNorm => {
-                let vertices = model.vertices.iter().map(|vertex| {
-                    VertexNorm::new(vertex.pos_coords, vertex.tex_coords, vertex.normal)
-                }).collect::<Vec<_>>();
-                let (vb, ib) = Self::model_to_buffers(&vertices, &model.indices, memory_allocator)?;
+                let (vb, ib) = Self::model_to_buffers::<VertexNorm>(model, scale, memory_allocator)?;
                 (vb.into_bytes(), ib)
             }
         };
@@ -81,10 +74,15 @@ impl Geometry {
 
     #[allow(clippy::type_complexity)]
     fn model_to_buffers<V: MyVertexTrait + Copy>(
-        vertices: &[V],
-        indices: &[u32],
+        model: &NormalizedObj,
+        scale: Vec3,
         memory_allocator: Arc<StandardMemoryAllocator>,
     ) -> anyhow::Result<(Subbuffer<[V]>, Subbuffer<[u32]>)> {
+        let vertices = model.vertices.iter().copied().map(|mut vertex| {
+            vertex.pos_coords = (scale * Vec3::from(vertex.pos_coords)).into();
+            V::new(vertex.pos_coords, vertex.tex_coords, vertex.normal)
+        }).collect::<Vec<_>>();
+
         let vertex_buffer = Buffer::from_iter(
             memory_allocator.clone(),
             BufferCreateInfo {
@@ -110,7 +108,7 @@ impl Geometry {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            indices.iter().copied(),
+            model.indices.iter().copied(),
         )?;
 
         Ok((vertex_buffer, index_buffer))

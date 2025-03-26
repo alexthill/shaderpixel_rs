@@ -9,6 +9,7 @@ pub trait MyVertexTrait: BufferContents + Vertex {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VertexType {
+    #[allow(unused)]
     VertexPos,
     VertexNorm,
 }
