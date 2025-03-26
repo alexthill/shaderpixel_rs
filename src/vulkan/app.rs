@@ -27,7 +27,7 @@ use vulkano::{
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo},
     format::Format,
-    image::{view::ImageView, ImageUsage, SampleCount},
+    image::{ImageUsage, SampleCount},
     instance::debug::DebugUtilsMessenger,
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{MemoryTypeFilter, StandardMemoryAllocator},
@@ -72,7 +72,6 @@ pub struct App {
     render_pass: Arc<RenderPass>,
     subpass_mirror: Subpass,
     subpass_scene: Subpass,
-    mirror_buffer: Arc<ImageView>,
     framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
@@ -201,9 +200,16 @@ impl App {
         );
         let subpass_mirror = Subpass::from(render_pass.clone(), SUBPASS_MIRROR).unwrap();
         let subpass_scene = Subpass::from(render_pass.clone(), SUBPASS_SCENE).unwrap();
-        let mirror_buffer = get_mirror_buffer(
+        let mirror_color = get_image_view(
             images[0].format(),
             images[0].extent(),
+            color_usage(),
+            memory_allocator.clone(),
+        );
+        let mirror_depth = get_image_view(
+            depth_format,
+            images[0].extent(),
+            depth_usage(),
             memory_allocator.clone(),
         );
         let framebuffers = get_framebuffers(
@@ -212,7 +218,8 @@ impl App {
             render_pass.clone(),
             memory_allocator.clone(),
             msaa_sample_count,
-            &mirror_buffer,
+            &mirror_color,
+            &mirror_depth,
         );
 
         let vs = vs::load(device.clone()).context("failed to load vert shader")?;
@@ -320,7 +327,7 @@ impl App {
             });
             let pipeline = MyPipeline::new(
                 MyPipelineCreateInfo {
-                    mirror_buffer: Some(mirror_buffer.clone()),
+                    mirror_buffers: Some([mirror_color.clone(), mirror_depth.clone()]),
                     ..art_obj.into()
                 },
                 Some(art_idx),
@@ -376,7 +383,6 @@ impl App {
             render_pass,
             subpass_mirror,
             subpass_scene,
-            mirror_buffer,
             framebuffers,
             viewport,
             command_buffer_allocator,
@@ -421,9 +427,16 @@ impl App {
             .context("failed to recreate swapchain")?;
 
         self.swapchain = new_swapchain;
-        self.mirror_buffer = get_mirror_buffer(
+        let mirror_color = get_image_view(
             new_images[0].format(),
             new_images[0].extent(),
+            color_usage(),
+            self.memory_allocator.clone(),
+        );
+        let mirror_depth = get_image_view(
+            self.depth_format,
+            new_images[0].extent(),
+            depth_usage(),
             self.memory_allocator.clone(),
         );
         self.framebuffers = get_framebuffers(
@@ -432,12 +445,13 @@ impl App {
             self.render_pass.clone(),
             self.memory_allocator.clone(),
             self.msaa_sample_count,
-            &self.mirror_buffer,
+            &mirror_color,
+            &mirror_depth,
         );
 
         self.viewport.extent = dimensions.into();
         for pipeline in self.pipelines.iter_mut(0) {
-            pipeline.mirror_buffer = Some(self.mirror_buffer.clone());
+            pipeline.mirror_buffers = Some([mirror_color.clone(), mirror_depth.clone()]);
             pipeline.update_pipeline(
                 self.device.clone(),
                 self.viewport.clone(),

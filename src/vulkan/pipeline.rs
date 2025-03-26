@@ -48,7 +48,7 @@ pub struct MyPipelineCreateInfo {
     pub enable_pipeline: bool,
     pub enable_depth_test: bool,
     pub cull_mode: CullMode,
-    pub mirror_buffer: Option<Arc<ImageView>>,
+    pub mirror_buffers: Option<[Arc<ImageView>; 2]>,
 }
 
 impl Default for MyPipelineCreateInfo {
@@ -60,7 +60,7 @@ impl Default for MyPipelineCreateInfo {
             enable_pipeline: true,
             enable_depth_test: true,
             cull_mode: CullMode::Back,
-            mirror_buffer: None,
+            mirror_buffers: None,
         }
     }
 }
@@ -92,7 +92,7 @@ pub struct MyPipeline {
     fs: Arc<HotShader>,
     pub enable_pipeline: bool,
     enable_depth_test: bool,
-    pub mirror_buffer: Option<Arc<ImageView>>,
+    pub mirror_buffers: Option<[Arc<ImageView>; 2]>,
     cull_mode: CullMode,
 }
 
@@ -137,7 +137,7 @@ impl MyPipeline {
             fs: create_info.fs,
             enable_pipeline: create_info.enable_pipeline,
             enable_depth_test: create_info.enable_depth_test,
-            mirror_buffer: create_info.mirror_buffer,
+            mirror_buffers: create_info.mirror_buffers,
             cull_mode: create_info.cull_mode,
         };
         pipeline.update_pipeline(
@@ -289,9 +289,9 @@ impl MyPipeline {
                 let set = WriteDescriptorSet::image_view_sampler(2, view.clone(), sampler.clone());
                 write_sets.push(set);
             }
-            if let Some(mirror_buffer) = self.mirror_buffer.as_ref() {
-                let set = WriteDescriptorSet::image_view(3, mirror_buffer.clone());
-                write_sets.push(set);
+            if let Some(mirror_buffers) = self.mirror_buffers.as_ref() {
+                write_sets.push(WriteDescriptorSet::image_view(3, mirror_buffers[0].clone()));
+                write_sets.push(WriteDescriptorSet::image_view(4, mirror_buffers[1].clone()));
             }
             write_sets.retain(|set| bind_req.contains_key(&(0, set.binding())));
             descriptor_sets.push(DescriptorSet::new(
