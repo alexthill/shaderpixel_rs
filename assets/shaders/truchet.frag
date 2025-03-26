@@ -8,7 +8,11 @@ const float epsilon = 0.001;
 const vec4 bgColor = vec4(1.0);
 const int steps = 100;
 const vec3 lightDir = normalize(vec3(1.2, 1, -1.1));
+
 vec3 railColor = vec3(0);
+int ballnb = 5;
+float railRotationSpeed = 1.;
+// float smooth = 22.;
 
 #define PAL1 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.33,0.67)
 #define PAL2 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) 
@@ -25,14 +29,14 @@ vec3 palette(float t,vec3 a,vec3 b,vec3 c,vec3 d )
 
 float hash13(vec3 p3)
 {
-	p3  = fract(p3 * .1031);
+    p3  = fract(p3 * .1031);
     p3 += dot(p3, p3.zyx + 31.32);
     return fract((p3.x + p3.y) * p3.z);
 }
 
 float sdfSphere(vec3 pos, float s)
 {
-  return length(pos) - s;
+    return length(pos) - s;
 }
 
 float opSmoothUnion( float d1, float d2, float k )
@@ -53,18 +57,21 @@ mat2 rot2D(float angle)
 // Mobius equation from https://www.shadertoy.com/view/XldSDs
 const float toroidRadius = 0.5; // The object's disc radius.
 const float polRot = 3.; // Poloidal rotations.
-const float ballnb = 5.0 * 4.0;
-float sdfMobius(vec3 p, float a){
+// const float ballnb = ballnb * 4.0;
+float sdfMobius(vec3 p){
+    float a = atan(p.z, p.x);
     p.xz *= rot2D(a);
     p.x -= toroidRadius;
-    p.xy *= rot2D(a*polRot + time);
+    p.xy *= rot2D(a*polRot + time * railRotationSpeed);
 
     p = abs(abs(p) - .06);
     return sdfSphere(p, .061);
 }
 
-float sdfSphereTorus(vec3 p, float a){
-    float ia = (floor(ballnb*a/PI2) + .5)/ballnb*PI2; 
+float sdfSphereTorus(vec3 p){
+    float a = atan(p.z, p.x);
+    float ball = float(ballnb) * 4.;
+    float ia = (floor(ball*a/PI2) + .5)/ball*PI2; 
 
     p.xz *= rot2D(ia);
     p.x -= toroidRadius;
@@ -74,21 +81,23 @@ float sdfSphereTorus(vec3 p, float a){
 
 vec2 objId;
 
-float sdRotatingTorus(vec3 pos){
+float sdRotatingTorus(vec3 pos, float k){
     float r = 1.0;
     vec3 p = pos;
     float sdfS, sdfT;
 
+    sdfT = sdfMobius(p);
     p.xz *= rot2D(radians(time * 10. * r));
-
-    float a = atan(p.z, p.x);
-    sdfT = sdfMobius(p, a);
-    sdfS = sdfSphereTorus(p, a);
+    sdfS = sdfSphereTorus(p);
 
     objId[0] = min(sdfS, objId[0]);
     objId[1] = min(sdfT, objId[1]);
 
-    return opSmoothUnion(sdfS, sdfT, 0.00);
+    return opSmoothUnion(sdfS, sdfT, k);
+}
+
+float sdRotatingTorus(vec3 pos){
+    return sdRotatingTorus(pos, 0.);
 }
 
 const mat2 rot90 = mat2(0, 1, -1, 0);
@@ -171,7 +180,7 @@ vec4 raymarch(vec3 rayOrigin, vec3 rayDir){
         //     return vec4(pos, 0.);
         // }
 
-        if (m_dist < epsilon || m_dist > maxDist) 
+        if (m_dist < epsilon || t > maxDist) 
             break;
 
         t += m_dist;
@@ -194,8 +203,7 @@ vec3 sdfColor(vec3 pos){
 }
 
 //return the color of the scene
-vec3 truchetRaymarching(vec3 rayOrigin, vec3 rayDir, inout float depth, float t){
-    time = t;
+vec3 truchetRaymarching(vec3 rayOrigin, vec3 rayDir, inout float depth){
     vec4 result = raymarch(rayOrigin, rayDir);
     vec3 pos = result.xyz;
 
@@ -205,6 +213,7 @@ vec3 truchetRaymarching(vec3 rayOrigin, vec3 rayDir, inout float depth, float t)
     vec3 sphereColor = sdfColor(pos);
 
     vec3 color = sphereColor * depth;
+    depth = dist;
     return color;
 }
 
