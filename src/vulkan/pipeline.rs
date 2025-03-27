@@ -276,7 +276,9 @@ impl MyPipeline {
         };
         let layout = &pipeline.layout().set_layouts()[0];
         let bind_req = pipeline.descriptor_binding_requirements();
-        let mut descriptor_sets = Vec::with_capacity(self.uniform_buffers_vert.len());
+        let descriptor_sets = self.descriptor_sets.get_or_insert_with(|| {
+            Vec::with_capacity(self.uniform_buffers_vert.len())
+        });
 
         // A for loop is nicer than zipping iterators together.
         #[allow(clippy::needless_range_loop)]
@@ -294,14 +296,18 @@ impl MyPipeline {
                 write_sets.push(WriteDescriptorSet::image_view(4, mirror_buffers[1].clone()));
             }
             write_sets.retain(|set| bind_req.contains_key(&(0, set.binding())));
-            descriptor_sets.push(DescriptorSet::new(
-                descriptor_set_allocator.clone(),
-                layout.clone(),
-                write_sets,
-                [],
-            )?);
+            if let Some(descriptor_set) = descriptor_sets.get_mut(i) {
+                // SAFETY: I have no idea if this safe or not?
+                unsafe { descriptor_set.update_by_ref(write_sets, [])?; }
+            } else {
+                descriptor_sets.push(DescriptorSet::new(
+                    descriptor_set_allocator.clone(),
+                    layout.clone(),
+                    write_sets,
+                    [],
+                )?);
+            }
         }
-        self.descriptor_sets = Some(descriptor_sets);
         Ok(())
     }
 
