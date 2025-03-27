@@ -19,9 +19,10 @@ const float MAX_DIST = INSIDE_SCALE * 2.0;
 const float BAILOUT = 4.0;
 
 float power = ubo.options[0];
-int maxIterations = int(ubo.options[1]);
-float epsilon = ubo.options[2];
-bool enable_shadows = bool(ubo.options[3]);
+int maxIterations = 15;
+float epsilon = ubo.options[1];
+bool enable_shadows = bool(ubo.options[2]);
+bool enable_animation = bool(ubo.options[3]);
 
 float sdf_scene(vec3 pos) {
     vec3 z = pos;
@@ -51,10 +52,14 @@ float sdf_scene(vec3 pos) {
 }
 
 #include "includes/fractal.glsl"
+#include "includes/palette.glsl"
 
 void main() {
     vec3 dir = normalize(fragPos - cameraPos);
     vec3 pos = (cameraPos + dir * cameraDistToContainer) * INSIDE_SCALE;
+
+    if (enable_animation)
+        power = (sin(ubo.time * 0.5) * .5 + .5) * 18. + 2.0;
 
     float dist = 0.0;
     int steps = ray_march(pos, dir, dist);
@@ -62,8 +67,9 @@ void main() {
     if (dist >= MAX_DIST) {
         outColor = vec4(0.0, 0.0, 0.0, 0.4);
     } else {
-        const vec3 ambient_color = vec3(float(steps / MAX_STEPS), 0.2, 0.4);
-        const vec3 diffuse_color = vec3(0.4, 0.2, 0.2);
+        // const vec3 ambient_color = vec3(float(steps / MAX_STEPS), 0.2, 0.4);
+        const vec3 ambient_color = palette(length(pos + dir * dist) * 1.0, PAL3);
+        const vec3 diffuse_color = vec3(0.5, 0.5, 0.5);
         vec3 color = calc_lightning(pos, dir, dist, steps, ambient_color, diffuse_color);
         outColor = vec4(color, 1.0);
     }
