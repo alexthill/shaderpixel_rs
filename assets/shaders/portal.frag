@@ -13,7 +13,6 @@ layout(set = 0, binding = 1) uniform UniformBufferObject {
 
 layout(location = 0) out vec4 outColor;
 
-// const float PI2 = 6.283;
 const int NUM_STEPS = 256;
 const vec3 COLORS[] = {
     vec3(0.2),
@@ -21,16 +20,19 @@ const vec3 COLORS[] = {
     vec3(0.4, 0.2, 0.0)
 };
 
-float time = mod(ubo.time, 100.);
+float time = mod(ubo.time, 100.0);
 bool invert = bool(ubo.options[2]);
 bool inside = bool(ubo.options[3]);
 
-#include "truchet.frag"
-
-mat2 rot2(float th) {
+mat2 rot2D(float th) {
+    // float c = cos(th);
+    // float s = sin(th);
+    // return mat2(c, s, -s, c);
     vec2 a = sin(vec2(1.5707963, 0) + th);
     return mat2(a, -a.y, a.x);
 }
+
+#include "truchet.frag"
 
 vec2 op_union(vec2 a, vec2 b) {
     return a.x < b.x ? a : b;
@@ -42,10 +44,6 @@ vec2 op_substraction(vec2 a, vec2 b) {
 
 float op_substraction(float a, float b) {
     return -a > b ? -a : b;
-}
-
-float sdf_sphere(vec3 p, float s) {
-    return length(p) - s;
 }
 
 float sdf_box(vec3 p, vec3 b) {
@@ -63,7 +61,7 @@ float sdf_portal_effect(vec3 p) {
     p.x *= 1.25;
     p -= vec3(0.0, -0.25, 0.0);
     p *= 0.5;
-    p.zy *= rot2(radians(90.));
+    p.zy *= rot2D(radians(90.));
 
     objId[0] = maxDist;
     objId[1] = maxDist;
@@ -76,7 +74,7 @@ vec2 sdf_portal(vec3 p) {
     vec3 pos = p;
     pos.x *= 1.25;
 
-    vec3 p_rot = vec3(pos.x, pos.yz * rot2(radians(90)));
+    vec3 p_rot = vec3(pos.x, pos.yz * rot2D(radians(90)));
     float d_portal = sdf_cylinder(p_rot - vec3(0.0, 0.0, 0.25), 0.01, 0.999);
     vec2 portal = vec2(d_portal, 0.0);
 
@@ -99,7 +97,7 @@ vec2 raymarch_portal(vec3 pos, vec3 dir, float depth, float max_depth) {
     vec2 scene;
     for (int i = 0; i < NUM_STEPS; i++) {
         scene = sdf_portal(pos + depth * dir);
-        float dist = scene.x;
+        float dist = scene.x * 0.8;
         if (dist < depth * 0.001) {
             return vec2(depth, scene.y);
         }
@@ -115,13 +113,13 @@ void main() {
     vec3 pos = inside ? cameraPos : fragPos;
     vec3 dir = normalize(fragPos - cameraPos);
     float max_depth = 100.0;
-    float dim_scale = 5.; // dimension_scale
+    float dim_scale = 5.0; // dimension_scale
 
     // portal effect variable
     railColor = vec3(1);
-    ballnb = 100;
-    railRotationSpeed = 3.;
-    railRotNb = 3;
+    ballnb = 100.0;
+    railRotationSpeed = 3.0;
+    railRotNb = 3.0;
 
     float portal_dist = raymarch_portal_effect(cameraPos, dir, 0.0, max_depth);
     vec3 portal_color = sdfColor(cameraPos + dir * portal_dist);
@@ -146,9 +144,9 @@ void main() {
     }
 
     railColor = vec3(0);
-    ballnb = clamp(int(ubo.options[0]), 1, 30); // default is 5
-    railRotationSpeed = 1.;
-    railRotNb = int(ubo.options[1]); // default is 3
+    ballnb = clamp(ubo.options[0], 1.0, 30.0); // default is 5
+    railRotationSpeed = 1.0;
+    railRotNb = ubo.options[1]; // default is 3
 
     float depth;
     vec3 color = truchetRaymarching(pos / dim_scale, dir, depth);
