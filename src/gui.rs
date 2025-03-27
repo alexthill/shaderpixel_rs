@@ -32,6 +32,7 @@ pub struct GuiState {
     open_fps: bool,
     open_options: bool,
     open_art_options: bool,
+    open_welcome: bool,
     frame_timings: VecDeque<Duration>,
     pub options: Options,
 }
@@ -62,14 +63,15 @@ impl GuiState {
         }
 
         gui.immediate_ui(|gui| {
+            let alpha = 128;
             let bg_color = match self.options.theme {
-                Theme::Dark => Color32::from_black_alpha(96),
-                Theme::Light => Color32::from_white_alpha(96),
+                Theme::Dark => Color32::from_black_alpha(alpha),
+                Theme::Light => Color32::from_white_alpha(alpha),
             };
             let dark_theme = {
                 let mut theme = Visuals::dark();
                 theme.override_text_color = Some(Color32::LIGHT_GRAY);
-                theme.panel_fill = Color32::from_black_alpha(96);
+                theme.panel_fill = Color32::from_black_alpha(alpha);
                 theme.window_corner_radius = CornerRadius::ZERO;
                 theme.window_shadow = egui::Shadow::NONE;
                 theme
@@ -77,7 +79,7 @@ impl GuiState {
             let light_theme = {
                 let mut theme = Visuals::light();
                 theme.override_text_color = Some(Color32::DARK_GRAY);
-                theme.panel_fill = Color32::from_white_alpha(96);
+                theme.panel_fill = Color32::from_white_alpha(alpha);
                 theme.window_corner_radius = CornerRadius::ZERO;
                 theme.window_shadow = egui::Shadow::NONE;
                 theme
@@ -136,6 +138,32 @@ impl GuiState {
                             });
                     });
             }
+
+            let mut clicked = false;
+            let _ = Window::new("Welcome to shaderpixel")
+                .open(&mut self.open_welcome)
+                .anchor(Align2::CENTER_CENTER, [0., 0.])
+                .resizable(false)
+                .default_width(300.)
+                .frame(Frame::NONE.fill(bg_color).inner_margin(5))
+                .show(&ctx, |ui| {
+                    ctx.input(|input| {
+                        clicked = input.pointer.button_clicked(egui::PointerButton::Primary);
+                    });
+
+                    ui.label("Click this window to close it.");
+                    ui.separator();
+                    egui::Grid::new("art_options_grid")
+                        .num_columns(2)
+                        .spacing([40.0, 4.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            Self::controls_grid_contents(ui);
+                        });
+                });
+            if clicked {
+                self.open_welcome = false;
+            }
         });
     }
 
@@ -144,6 +172,25 @@ impl GuiState {
         self.open_fps = self.open;
         self.open_options = self.open;
         self.open_art_options = self.open;
+        self.open_welcome = self.open;
+    }
+
+    fn controls_grid_contents(ui: &mut Ui) {
+        let controls = [
+            ("WASD", "move around"),
+            ("space", "move up"),
+            ("left shift", "move down"),
+            ("left control", "toggle fly mode"),
+            ("F1", "toggle fullsceen"),
+            ("F2", "toggle interface"),
+            ("L", "reset position"),
+            ("esc", "exit"),
+        ];
+        for (a, b) in controls {
+            ui.label(a);
+            ui.label(b);
+            ui.end_row();
+        }
     }
 
     fn art_options_grid_contents(ui: &mut Ui, options: &mut [ArtOption]) {
@@ -304,6 +351,7 @@ impl Default for GuiState {
             open_fps: true,
             open_options: true,
             open_art_options: true,
+            open_welcome: true,
             frame_timings: VecDeque::new(),
             options: Options {
                 recreate_swapchain: false,
