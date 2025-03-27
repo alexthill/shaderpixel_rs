@@ -22,6 +22,7 @@ const vec3 COLORS[] = {
 
 float time = mod(ubo.time, 100.0);
 bool invert = bool(ubo.options[0][2]);
+float ball_size = ubo.options[0][3];
 bool inside = bool(ubo.options[1][3]);
 
 mat2 rot2D(float th) {
@@ -33,6 +34,7 @@ mat2 rot2D(float th) {
 }
 
 #include "truchet.frag"
+
 
 vec2 op_union(vec2 a, vec2 b) {
     return a.x < b.x ? a : b;

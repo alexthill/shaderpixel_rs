@@ -60,7 +60,7 @@ float sdfSphereTorus(vec3 p){
     p.xz *= rot2D(ia);
     p.x -= toroidRadius;
 
-    return sdfSphere(abs(p), 0.05);
+    return sdfSphere(abs(p), ball_size);
 }
 
 float sdRotatingTorus(vec3 p, float k) {

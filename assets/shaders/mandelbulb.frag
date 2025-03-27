@@ -7,7 +7,7 @@ layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 
@@ -18,11 +18,12 @@ const float INSIDE_SCALE = 1.2;
 const float MAX_DIST = INSIDE_SCALE * 2.0;
 const float BAILOUT = 4.0;
 
-float power = ubo.options[0];
-int maxIterations = 15;
-float epsilon = ubo.options[1];
-bool enable_shadows = bool(ubo.options[2]);
-bool enable_animation = bool(ubo.options[3]);
+float power = ubo.options[0][0];
+int maxIterations = int(ubo.options[0][1]);
+float epsilon = ubo.options[0][2];
+int color_index = int(ubo.options[0][3]);
+bool enable_shadows = bool(ubo.options[1][0]);
+bool enable_animation = bool(ubo.options[1][1]);
 
 float sdf_scene(vec3 pos) {
     vec3 z = pos;
@@ -68,7 +69,7 @@ void main() {
         outColor = vec4(0.0, 0.0, 0.0, 0.4);
     } else {
         // const vec3 ambient_color = vec3(float(steps / MAX_STEPS), 0.2, 0.4);
-        const vec3 ambient_color = palette(length(pos + dir * dist) * 1.0, PAL3);
+        const vec3 ambient_color = getPalette(length(pos + dir * dist) * 1.0, color_index);
         const vec3 diffuse_color = vec3(0.5, 0.5, 0.5);
         vec3 color = calc_lightning(pos, dir, dist, steps, ambient_color, diffuse_color);
         outColor = vec4(color, 1.0);

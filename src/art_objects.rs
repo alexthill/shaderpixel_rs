@@ -91,6 +91,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 ArtOption::slider_i32("Ball number", 5, 1, 20),
                 ArtOption::slider_i32("Rail Rotation", 3, -10, 10),
                 ArtOption::checkbox("Invert", false),
+                ArtOption::slider_f32("Ball Size", 0.05, 0., 0.2),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(1.0),
@@ -183,8 +184,9 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mandelbulb.frag")),
             options: vec![
                 ArtOption::slider_i32("Power", 8, 1, 20),
-                // ArtOption::slider_i32("Iterations", 10, 1, 100),
+                ArtOption::slider_i32("Iterations", 10, 1, 100),
                 ArtOption::slider_f32_log("Epsilon", 0.0002, 0.000001, 0.001),
+                ArtOption::slider_i32("ColorIndex", 3, 0, 7),
                 ArtOption::checkbox("Shadows", true),
                 ArtOption::checkbox("Animate", true),
             ],
