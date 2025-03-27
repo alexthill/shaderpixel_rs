@@ -11,8 +11,8 @@ const vec3 lightDir = normalize(vec3(1.2, 1, -1.1));
 
 vec3 railColor = vec3(0);
 int ballnb = 5;
+int railRotNb = 3;
 float railRotationSpeed = 1.;
-// float smooth = 22.;
 
 #define PAL1 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.33,0.67)
 #define PAL2 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) 
@@ -56,13 +56,12 @@ mat2 rot2D(float angle)
 
 // Mobius equation from https://www.shadertoy.com/view/XldSDs
 const float toroidRadius = 0.5; // The object's disc radius.
-const float polRot = 3.; // Poloidal rotations.
 // const float ballnb = ballnb * 4.0;
 float sdfMobius(vec3 p){
     float a = atan(p.z, p.x);
     p.xz *= rot2D(a);
     p.x -= toroidRadius;
-    p.xy *= rot2D(a*polRot + time * railRotationSpeed);
+    p.xy *= rot2D(a*float(railRotNb) + time * railRotationSpeed);
 
     p = abs(abs(p) - .06);
     return sdfSphere(p, .061);
@@ -82,12 +81,12 @@ float sdfSphereTorus(vec3 p){
 vec2 objId;
 
 float sdRotatingTorus(vec3 pos, float k){
-    float r = 1.0;
     vec3 p = pos;
     float sdfS, sdfT;
 
+
     sdfT = sdfMobius(p);
-    p.xz *= rot2D(radians(time * 10. * r));
+    p.xz *= rot2D(radians(time * 10.));
     sdfS = sdfSphereTorus(p);
 
     objId[0] = min(sdfS, objId[0]);
