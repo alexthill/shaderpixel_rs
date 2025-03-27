@@ -277,17 +277,15 @@ impl ApplicationHandler for App {
                 art.enable_pipeline = art.data.dist_to_camera_sqr > portal_dist;
             }
 
-            self.art_objects[box_idx].enable_pipeline = true;
             let portal = &self.art_objects[portal_idx];
-            if !Arc::ptr_eq(&portal.shader_frag, &self.art_objects[box_idx].shader_frag) {
-                let (d, vs, fs) = (portal.data, portal.shader_vert.clone(), portal.shader_frag.clone());
-                let box_obj = &mut self.art_objects[box_idx];
-                box_obj.data.matrix = d.matrix;
-                box_obj.data.option_values = d.option_values;
-                box_obj.shader_vert = vs.clone();
-                box_obj.shader_frag = fs.clone();
-                box_obj.data.option_values[1][3] = 1.;
-            }
+            let (d, vs, fs) = (portal.data, portal.shader_vert.clone(), portal.shader_frag.clone());
+            let box_obj = &mut self.art_objects[box_idx];
+            box_obj.enable_pipeline = true;
+            box_obj.data.matrix = d.matrix;
+            box_obj.data.option_values = d.option_values;
+            box_obj.data.option_values[1][3] = 1.;
+            box_obj.shader_vert = vs;
+            box_obj.shader_frag = fs;
         } else {
             for art in self.art_objects.iter_mut() {
                 art.enable_pipeline = true;

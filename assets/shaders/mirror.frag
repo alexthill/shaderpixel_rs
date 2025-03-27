@@ -16,14 +16,15 @@ layout(input_attachment_index = 0, set = 0, binding = 4) uniform subpassInput mi
 layout(location = 0) out vec4 outColor;
 
 bool invert = bool(ubo.options[0]);
-bool fog = bool(ubo.options[1]);
+bool depth = bool(ubo.options[1]);
 
 void main() {
-    vec3 color = subpassLoad(mirror_color).rgb;
-    float depth = subpassLoad(mirror_depth).r;
-
-    if (fog) {
-        color *= 1.0 - depth;
+    vec3 color;
+    if (depth) {
+        float depth = subpassLoad(mirror_depth).r;
+        color = vec3(depth);
+    } else {
+        color = subpassLoad(mirror_color).rgb;
     }
     if (invert) {
         color = 1.0 - color;

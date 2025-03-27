@@ -72,7 +72,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             shader_frag: Arc::new(HotShader::new_frag("assets/shaders/mirror.frag")),
             options: vec![
                 ArtOption::checkbox("Invert", false),
-                ArtOption::checkbox("Fog", false),
+                ArtOption::checkbox("Depth", false),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::new(6.0, 1., 1.0),

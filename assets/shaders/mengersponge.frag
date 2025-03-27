@@ -7,7 +7,7 @@ layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 
@@ -17,9 +17,9 @@ const float EPS = 0.00001;
 const int MAX_MENGER_DEPTH = 8;
 const vec4 CONTAINER_COLOR = vec4(0.0, 0.0, 0.0, 0.4);
 
-int menger_depth = int(ubo.options[0]);
-bool enable_shadows = bool(ubo.options[1]);
-bool enable_mssa = bool(ubo.options[2]);
+int menger_depth = int(ubo.options[0][0]);
+bool enable_shadows = bool(ubo.options[0][1]);
+bool enable_mssa = bool(ubo.options[0][2]);
 
 // Calculates the intersections of the axis-aligned box defined by the corners `c1` and `c2`
 // and the ray from `pos` in direction `dir`. It must be `c1` <= `c2`.
@@ -173,13 +173,13 @@ void main() {
         return;
     }
 
-    if (length(dFdx(outColor)) > 0.0) {
+    if (length(dFdx(outColor)) > 0.01) {
         vec3 dx = dFdx(fragPos);
         outColor += get_color(fragPos - 0.25 * dx);
         outColor += get_color(fragPos + 0.25 * dx);
         outColor /= 3.0;
     }
-    if (length(dFdy(outColor)) > 0.0) {
+    if (length(dFdy(outColor)) > 0.01) {
         vec3 dy = dFdy(fragPos);
         outColor += get_color(fragPos - 0.25 * dy);
         outColor += get_color(fragPos + 0.25 * dy);
