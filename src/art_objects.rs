@@ -111,7 +111,6 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             fn_update_data: Some(Box::new(|data, _| {
                 // draw after all other shaders
                 data.dist_to_camera_sqr = -1.;
-                data.option_values[3] = 1.;
             })),
             enable_pipeline: false,
             enable_depth_test: false,

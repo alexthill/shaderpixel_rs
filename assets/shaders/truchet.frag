@@ -1,6 +1,4 @@
 
-float time = 0.0;
-
 const float PI2 = 6.283;
 
 const float maxDist = 10.;

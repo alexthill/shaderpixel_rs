@@ -274,20 +274,25 @@ impl ApplicationHandler for App {
         }
 
         // handle portal
-        if let Some(portal_idx)
-            = self.art_objects.iter().position(|art| art.data.inside_portal)
+        if let (Some(box_idx), Some(portal_idx))
+            = (self.box_idx, self.art_objects.iter().position(|art| art.data.inside_portal))
         {
             let portal_dist = self.art_objects[portal_idx].data.dist_to_camera_sqr;
             for art in self.art_objects.iter_mut() {
                 art.enable_pipeline = art.data.dist_to_camera_sqr > portal_dist;
             }
+
+            self.art_objects[box_idx].enable_pipeline = true;
             let portal = &self.art_objects[portal_idx];
-            let data = (portal.data.matrix, portal.shader_vert.clone(), portal.shader_frag.clone());
-            let box_obj = &mut self.art_objects[self.box_idx.unwrap()];
-            box_obj.enable_pipeline = true;
-            box_obj.data.matrix = data.0;
-            box_obj.shader_vert = data.1.clone();
-            box_obj.shader_frag = data.2.clone();
+            if !Arc::ptr_eq(&portal.shader_frag, &self.art_objects[box_idx].shader_frag) {
+                let (d, vs, fs) = (portal.data, portal.shader_vert.clone(), portal.shader_frag.clone());
+                let box_obj = &mut self.art_objects[box_idx];
+                box_obj.data.matrix = d.matrix;
+                box_obj.data.option_values = d.option_values;
+                box_obj.shader_vert = vs.clone();
+                box_obj.shader_frag = fs.clone();
+                box_obj.data.option_values[3] = 1.;
+            }
         } else {
             for art in self.art_objects.iter_mut() {
                 art.enable_pipeline = true;

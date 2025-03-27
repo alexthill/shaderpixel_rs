@@ -82,6 +82,7 @@ impl ArtData {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum ArtOptionType {
     Checkbox { checked: bool },
     SliderF32 { value: f32, min: f32, max: f32, log: bool },
@@ -114,6 +115,7 @@ impl ArtOptionType {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct ArtOption {
     label: &'static str,
     pub ty: ArtOptionType,

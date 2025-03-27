@@ -1,6 +1,5 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
-#include "truchet.frag"
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNorm;
@@ -22,7 +21,11 @@ const vec3 COLORS[] = {
     vec3(0.4, 0.2, 0.0)
 };
 
+float time = mod(ubo.time, 100.);
+bool invert = bool(ubo.options[2]);
 bool inside = bool(ubo.options[3]);
+
+#include "truchet.frag"
 
 mat2 rot2(float th) {
     vec2 a = sin(vec2(1.5707963, 0) + th);
@@ -113,8 +116,6 @@ void main() {
     vec3 dir = normalize(fragPos - cameraPos);
     float max_depth = 100.0;
     float dim_scale = 5.; // dimension_scale
-    
-    time = mod(ubo.time, 100.);
 
     // portal effect variable
     railColor = vec3(1);
@@ -124,6 +125,9 @@ void main() {
 
     float portal_dist = raymarch_portal_effect(cameraPos, dir, 0.0, max_depth);
     vec3 portal_color = sdfColor(cameraPos + dir * portal_dist);
+    if (invert) {
+        portal_color = 1.0 - portal_color;
+    }
 
     if (!inside) {
         if(portal_dist < max_depth){
@@ -145,20 +149,21 @@ void main() {
     ballnb = clamp(int(ubo.options[0]), 1, 30); // default is 5
     railRotationSpeed = 1.;
     railRotNb = int(ubo.options[1]); // default is 3
-    
+
     float depth;
     vec3 color = truchetRaymarching(pos / dim_scale, dir, depth);
     vec2 scene = raymarch_portal(pos, dir, 0.0, max_depth);
-
-    if(bool(ubo.options[2])){
-        color = 1.0 - color;
-    }
 
     if(portal_dist < depth * dim_scale){
         outColor = vec4(portal_color, 1.0);
         return;
     }
-    if(scene.x < depth * dim_scale)
+    if(scene.x < depth * dim_scale) {
         discard;
+    }
+
+    if (invert) {
+        color = 1.0 - color;
+    }
     outColor = vec4(color, 1.0); // Adding my shader here like a caveman
 }
