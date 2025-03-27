@@ -7,7 +7,7 @@ layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 
@@ -19,9 +19,9 @@ const int steps = 500;
 
 vec3 lightDir = normalize(ubo.light_pos.xyz);
 const vec3 gemColor = vec3(0.78, 0.19, 0.19);
-int gemType = int(ubo.options.x);
-int colorIndex = int(ubo.options.y); // 0 is default unicolor
-float rotationSpeed = ubo.options.z;
+int gemType = int(ubo.options[0][0]);
+int colorIndex = int(ubo.options[0][1]); // 0 is default unicolor
+float rotationSpeed = ubo.options[0][2];
 
 #define PAL1 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.33,0.67)
 #define PAL2 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) 

@@ -217,7 +217,7 @@ impl MyPipeline {
         if let Some(data) = data {
             *self.uniform_buffers_frag[idx].write()? = fs::UniformBufferObject {
                 light_pos: data.light_pos.to_array(),
-                options: data.option_values.to_array(),
+                options: data.option_values.map(|chunk| chunk.to_array()),
                 time,
             };
         }

@@ -11,8 +11,8 @@ layout(location = 1) in vec3 fragNorm;
 
 layout(location = 0) out vec4 outColor;
 
-float time = ubo.time * ubo.options[3];
-vec3 shapeColor = ubo.options.xyz;
+float time = ubo.time * ubo.options[0][3];
+vec3 shapeColor = ubo.options[0].xyz;
 const vec3 backgroundColor = vec3(0.12);
 
 float sdfCircle(vec2 center, float r, vec2 pos) {

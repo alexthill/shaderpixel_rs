@@ -7,7 +7,7 @@ layout(location = 2) in vec3 cameraPos;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 
@@ -21,8 +21,8 @@ const vec3 COLORS[] = {
 };
 
 float time = mod(ubo.time, 100.0);
-bool invert = bool(ubo.options[2]);
-bool inside = bool(ubo.options[3]);
+bool invert = bool(ubo.options[0][2]);
+bool inside = bool(ubo.options[1][3]);
 
 mat2 rot2D(float th) {
     // float c = cos(th);
@@ -144,9 +144,9 @@ void main() {
     }
 
     railColor = vec3(0);
-    ballnb = clamp(ubo.options[0], 1.0, 30.0); // default is 5
+    ballnb = clamp(ubo.options[0][0], 1.0, 30.0); // default is 5
     railRotationSpeed = 1.0;
-    railRotNb = ubo.options[1]; // default is 3
+    railRotNb = ubo.options[0][1]; // default is 3
 
     float depth;
     vec3 color = truchetRaymarching(pos / dim_scale, dir, depth);

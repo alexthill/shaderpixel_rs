@@ -9,7 +9,7 @@ layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 layout(set = 0, binding = 2) uniform sampler2D texSampler;
@@ -21,7 +21,7 @@ const float SUN_RADIUS = 0.2;
 const float EARTH_RADIUS = 0.1;
 const float MOON_RADIUS = 0.04;
 
-float time = ubo.time * ubo.options[0];
+float time = ubo.time * ubo.options[0][0];
 
 vec3 get_earth_pos() {
     return vec3(cos(time * 0.1), 0.0, sin(time * 0.1)) * 0.7;

@@ -282,16 +282,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
     }));
 
     for art in art_objects.iter_mut() {
-        if art.options.is_empty() {
-            continue;
-        }
-
-        let mut values = [0.; 4];
-        let mut i = 0;
-        for option in art.options.iter() {
-            option.ty.save_value(&mut values, &mut i);
-        }
-        art.data.option_values = values.into();
+        art.save_options();
     }
 
     Ok(art_objects)

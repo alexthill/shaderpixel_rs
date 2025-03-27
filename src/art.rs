@@ -31,6 +31,20 @@ impl ArtObject {
     pub fn position(&self) -> Vec3 {
         self.data.position()
     }
+
+    pub fn save_options(&mut self) {
+        if self.options.is_empty() {
+            return;
+        }
+
+        let mut values = [0.; 8];
+        let mut i = 0;
+        for option in self.options.iter() {
+            option.ty.save_value(&mut values, &mut i);
+        }
+        let mut chunks = values.chunks(4).map(|chunk| Vec4::from_slice(chunk));
+        self.data.option_values = [chunks.next().unwrap(), chunks.next().unwrap()];
+    }
 }
 
 impl Default for ArtObject {
@@ -65,7 +79,7 @@ pub struct ArtData {
     pub dist_to_camera_sqr: f32,
     pub matrix: Mat4,
     pub light_pos: Vec4,
-    pub option_values: Vec4,
+    pub option_values: [Vec4; 2],
     pub inside_portal: bool,
 }
 

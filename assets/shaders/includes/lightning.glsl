@@ -2,7 +2,7 @@
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 

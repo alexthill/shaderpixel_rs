@@ -248,12 +248,7 @@ impl ApplicationHandler for App {
 
         // update options data for nearest_art
         if let Some(art) = nearest_art.as_mut() {
-            let mut values = [0.; 4];
-            let mut i = 0;
-            for option in art.options.iter() {
-                option.ty.save_value(&mut values, &mut i);
-            }
-            art.data.option_values = values.into();
+            art.save_options();
         }
 
         // update data for all art
@@ -291,7 +286,7 @@ impl ApplicationHandler for App {
                 box_obj.data.option_values = d.option_values;
                 box_obj.shader_vert = vs.clone();
                 box_obj.shader_frag = fs.clone();
-                box_obj.data.option_values[3] = 1.;
+                box_obj.data.option_values[1][3] = 1.;
             }
         } else {
             for art in self.art_objects.iter_mut() {
