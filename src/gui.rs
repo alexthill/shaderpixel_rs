@@ -180,6 +180,7 @@ impl GuiState {
             ("WASD", "move around"),
             ("space", "move up"),
             ("left shift", "move down"),
+            ("scroll wheel", "change movement speed"),
             ("left control", "toggle fly mode"),
             ("F1", "toggle fullsceen"),
             ("F2", "toggle interface"),
