@@ -22,6 +22,8 @@ const vec3 gemColor = vec3(0.78, 0.19, 0.19);
 int gemType = int(ubo.options[0][0]);
 int colorIndex = int(ubo.options[0][1]); // 0 is default unicolor
 float rotationSpeed = ubo.options[0][2];
+bool enable_diffuse = bool(ubo.options[0][3]);
+bool enable_specular = bool(ubo.options[1][0]);
 
 #define PAL1 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.33,0.67)
 #define PAL2 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) 
@@ -228,7 +230,7 @@ vec3 raymarch(vec3 rayOrigin, vec3 rayDir, inout vec3 transmittance, inout vec3 
                 // scatteredLight += spec + dif;
             }
             float spec = specular(rayDir, normal, lightDir, 32.) * 1.0;
-            scatteredLight += (spec + dif) * refractionLoss * transmittance;
+            scatteredLight += ((spec * float(enable_specular)) + (dif * float(enable_diffuse))) * refractionLoss * transmittance;
         }
 
         if (m_dist > maxDist /*|| m_dist < epsilon*/) 

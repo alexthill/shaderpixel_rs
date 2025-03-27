@@ -92,7 +92,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 ArtOption::slider_i32("Rail Rotation", 3, -10, 10),
                 ArtOption::slider_f32("Ball Size", 0.05, 0., 0.2),
                 ArtOption::slider_f32("Rail Size", 0.06, 0., 0.1),
-                ArtOption::slider_f32("Rail width", 0.011, 0., 0.1),
+                ArtOption::slider_f32("Rail width", 0.011, 0., 0.2),
                 ArtOption::slider_i32("ColorIndex", 1, 0, 7),
                 ArtOption::checkbox("Invert", false),
             ],
@@ -241,6 +241,8 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
                 ArtOption::slider_i32("GemType", 1, 0, 1),
                 ArtOption::slider_i32("ColorIndex", 2, 0, 7),
                 ArtOption::slider_f32("Speed", 1., 0., 2.),
+                ArtOption::checkbox("Diffuse", true),
+                ArtOption::checkbox("Specular", true),
             ],
             data: ArtData::new(Mat4::from_scale_rotation_translation(
                 Vec3::splat(0.5),
