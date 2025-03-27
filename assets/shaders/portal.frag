@@ -21,8 +21,11 @@ const vec3 COLORS[] = {
 };
 
 float time = mod(ubo.time, 100.0);
-bool invert = bool(ubo.options[0][2]);
-float ball_size = ubo.options[0][3];
+float ball_size = ubo.options[0][2];
+float rail_size = ubo.options[0][3];
+float rail_width = ubo.options[1][0];
+int color_index = int(ubo.options[1][1]);
+bool invert = bool(ubo.options[1][2]);
 bool inside = bool(ubo.options[1][3]);
 
 mat2 rot2D(float th) {
@@ -33,6 +36,7 @@ mat2 rot2D(float th) {
     return mat2(a, -a.y, a.x);
 }
 
+#include "includes/palette.glsl"
 #include "truchet.frag"
 
 
@@ -146,9 +150,11 @@ void main() {
     }
 
     railColor = vec3(0);
-    ballnb = clamp(ubo.options[0][0], 1.0, 30.0); // default is 5
+    ballnb = ubo.options[0][0]; // default is 5
     railRotationSpeed = 1.0;
     railRotNb = ubo.options[0][1]; // default is 3
+    if (ballnb > 99.)
+        ballnb = 100000.;
 
     float depth;
     vec3 color = truchetRaymarching(pos / dim_scale, dir, depth);

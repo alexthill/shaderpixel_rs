@@ -13,18 +13,6 @@ float railRotNb = 3.0;
 float railRotationSpeed = 1.0;
 vec2 objId;
 
-#define PAL1 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.33,0.67)
-#define PAL2 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20)
-#define PAL3 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.3,0.20,0.20)
-#define PAL4 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,0.5),vec3(0.8,0.90,0.30)
-#define PAL5 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,0.7,0.4),vec3(0.0,0.15,0.20)
-#define PAL6 vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(2.0,1.0,0.0),vec3(0.5,0.20,0.25)
-#define PAL7 vec3(0.8,0.5,0.4),vec3(0.2,0.4,0.2),vec3(2.0,1.0,1.0),vec3(0.0,0.25,0.25)
-
-vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
-    return a + b * cos(PI2 * (c * t + d));
-}
-
 float hash13(vec3 p3) {
     p3 = fract(p3 * 0.1031);
     p3 += dot(p3, p3.zyx + 31.32);
@@ -48,8 +36,8 @@ float sdfMobius(vec3 p) {
     p.x -= toroidRadius;
     p.xy *= rot2D(a * railRotNb + time * railRotationSpeed);
 
-    p = abs(abs(p) - 0.06);
-    return sdfSphere(p, 0.061);
+    p = abs(abs(p) - rail_size); // 0.06
+    return sdfSphere(p, rail_size + rail_width - 0.01); // 0.061
 }
 
 float sdfSphereTorus(vec3 p){
@@ -138,7 +126,8 @@ float trilinearInterpolation(vec3 p) {
 }
 
 vec3 get3dColorGradient(vec3 pos){
-    return palette(trilinearInterpolation(pos + time * 0.2) * 2.0, PAL1);
+    return getPalette(trilinearInterpolation(pos + time * 0.2) * 2.0, color_index);
+    // return palette(trilinearInterpolation(pos + time * 0.2) * 2.0, PAL3);
 }
 
 vec3 raymarch(vec3 rayOrigin, vec3 rayDir){
