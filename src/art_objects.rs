@@ -125,8 +125,7 @@ pub fn get_art_objects() -> anyhow::Result<Vec<ArtObject>> {
             fn_update_data: Some(Box::new(|data, update| {
                 let matrix = Mat4::from_scale_rotation_translation(
                     Vec3::splat(0.4),
-                    Quat::from_rotation_x(-update.camera.angle_pitch)
-                        * Quat::from_rotation_y(90_f32.to_radians()),
+                    Quat::from_rotation_y(90_f32.to_radians()),
                     Vec3::new(0.0, -1.0, 1.0),
                 );
                 data.dist_to_camera_sqr = 0.;
