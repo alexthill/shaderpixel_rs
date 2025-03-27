@@ -42,7 +42,7 @@ impl ArtObject {
         for option in self.options.iter() {
             option.ty.save_value(&mut values, &mut i);
         }
-        let mut chunks = values.chunks(4).map(|chunk| Vec4::from_slice(chunk));
+        let mut chunks = values.chunks(4).map(Vec4::from_slice);
         self.data.option_values = [chunks.next().unwrap(), chunks.next().unwrap()];
     }
 }

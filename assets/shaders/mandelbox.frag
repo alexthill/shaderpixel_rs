@@ -7,7 +7,7 @@ layout(location = 2) in float cameraDistToContainer;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject {
     vec4 light_pos;
-    vec4 options;
+    vec4 options[2];
     float time;
 } ubo;
 
@@ -18,10 +18,10 @@ const int MAX_STEPS = 128;
 const float INSIDE_SCALE = 4.5;
 const float MAX_DIST = INSIDE_SCALE * 2.0;
 
-float scaleFactor = ubo.options[0];
-int maxIterations = int(ubo.options[1]);
-float epsilon = ubo.options[2];
-bool enable_shadows = bool(ubo.options[3]);
+float scaleFactor = ubo.options[0][0];
+int maxIterations = int(ubo.options[0][1]);
+float epsilon = ubo.options[0][2];
+bool enable_shadows = bool(ubo.options[0][3]);
 
 float constant1 = abs(scaleFactor - 1.0);
 float constant2 = pow(float(abs(scaleFactor)), float(1 - maxIterations));
