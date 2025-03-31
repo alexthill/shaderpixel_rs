@@ -84,6 +84,7 @@ pub struct MyPipeline {
     texture: Option<Texture>,
     subpass: Subpass,
     pipeline: Option<Arc<GraphicsPipeline>>,
+    descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     descriptor_sets: Option<Vec<Arc<DescriptorSet>>>,
     geometry: Geometry,
     uniform_buffers_vert: Vec<Subbuffer<vs::UniformBufferObject>>,
@@ -92,7 +93,7 @@ pub struct MyPipeline {
     fs: Arc<HotShader>,
     pub enable_pipeline: bool,
     enable_depth_test: bool,
-    pub mirror_buffers: Option<[Arc<ImageView>; 2]>,
+    mirror_buffers: Option<[Arc<ImageView>; 2]>,
     cull_mode: CullMode,
 }
 
@@ -129,6 +130,7 @@ impl MyPipeline {
             texture,
             pipeline: None,
             subpass,
+            descriptor_set_allocator,
             descriptor_sets: None,
             geometry,
             uniform_buffers_vert,
@@ -143,7 +145,6 @@ impl MyPipeline {
         pipeline.update_pipeline(
             device,
             viewport,
-            descriptor_set_allocator,
         )?;
         Ok(pipeline)
     }
@@ -229,7 +230,6 @@ impl MyPipeline {
         &mut self,
         device: Arc<Device>,
         viewport: Viewport,
-        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> anyhow::Result<()> {
         if !self.enable_pipeline {
             self.pipeline.take();
@@ -254,8 +254,7 @@ impl MyPipeline {
                 self.cull_mode,
             )?;
             self.pipeline = Some(pipeline);
-            self.update_descriptor_sets(descriptor_set_allocator)
-                .context("failed to update descriptor_sets")?;
+            self.update_descriptor_sets().context("failed to update descriptor_sets")?;
         } else {
             self.vs.reload(false);
             self.fs.reload(false);
@@ -264,10 +263,15 @@ impl MyPipeline {
         Ok(())
     }
 
-    fn update_descriptor_sets(
-        &mut self,
-        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-    ) -> anyhow::Result<()> {
+    pub fn update_mirror_buffers(&mut self, mirror_buffers: [Arc<ImageView>; 2]) -> anyhow::Result<()> {
+        if self.mirror_buffers.is_none() {
+            return Ok(());
+        }
+        self.mirror_buffers = Some(mirror_buffers);
+        self.update_descriptor_sets()
+    }
+
+    fn update_descriptor_sets(&mut self) -> anyhow::Result<()> {
         // sanity check
         debug_assert_eq!(self.uniform_buffers_vert.len(), self.uniform_buffers_frag.len());
 
@@ -301,7 +305,7 @@ impl MyPipeline {
                 unsafe { descriptor_set.update_by_ref(write_sets, [])?; }
             } else {
                 descriptor_sets.push(DescriptorSet::new(
-                    descriptor_set_allocator.clone(),
+                    self.descriptor_set_allocator.clone(),
                     layout.clone(),
                     write_sets,
                     [],

@@ -1,4 +1,4 @@
-NAME=shaderpixel_rs
+NAME=$(shell basename $(CURDIR))
 BIN_NAME=shaderpixel_rs
 CARGO=/root/.cargo/bin/cargo
 CONTAINER=rust-rust-1
@@ -27,7 +27,7 @@ run: download build
 
 rr: run_release
 run_release: download build_release
-	@RUST_LOG=warn $(TARGET)/release/$(BIN_NAME)
+	@RUST_LOG=info $(TARGET)/release/$(BIN_NAME)
 
 t: test
 test:

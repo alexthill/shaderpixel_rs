@@ -60,14 +60,13 @@ pub struct App {
     pub mirror_matrix: Mat4,
     pub fov: f32,
 
-    #[allow(dead_code)]
-    instance: Arc<Instance>,
+    _instance: Arc<Instance>,
     device: Arc<Device>,
     queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
     msaa_sample_count: SampleCount,
     memory_allocator: Arc<StandardMemoryAllocator>,
-    descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    _descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     depth_format: Format,
     render_pass: Arc<RenderPass>,
     subpass_mirror: Subpass,
@@ -372,13 +371,13 @@ impl App {
             view_matrix: Mat4::IDENTITY,
             mirror_matrix: Mat4::IDENTITY,
             fov: 75_f32,
-            instance,
+            _instance: instance,
             device,
             queue,
             swapchain,
             msaa_sample_count,
             memory_allocator,
-            descriptor_set_allocator,
+            _descriptor_set_allocator: descriptor_set_allocator,
             depth_format,
             render_pass,
             subpass_mirror,
@@ -417,7 +416,7 @@ impl App {
         dimensions: PhysicalSize<u32>,
         options: &crate::gui::Options,
     ) -> anyhow::Result<()> {
-        log::warn!("recreating swapchain with new size {dimensions:?}");
+        log::info!("recreating swapchain with new size {dimensions:?}");
         let (new_swapchain, new_images) = self.swapchain
             .recreate(SwapchainCreateInfo {
                 image_extent: dimensions.into(),
@@ -449,14 +448,16 @@ impl App {
             &mirror_depth,
         );
 
+        // we need to wait here before we can update the descriptor sets
+        for image_fence in self.fences.iter().filter_map(|fence| fence.as_ref()) {
+            image_fence.wait(None).context("failed to wait for fence")?;
+        }
+
         self.viewport.extent = dimensions.into();
         for pipeline in self.pipelines.iter_mut(0) {
-            pipeline.mirror_buffers = Some([mirror_color.clone(), mirror_depth.clone()]);
-            pipeline.update_pipeline(
-                self.device.clone(),
-                self.viewport.clone(),
-                self.descriptor_set_allocator.clone(),
-            ).context("failed to update pipeline")?;
+            pipeline.update_pipeline(self.device.clone(), self.viewport.clone())
+                .context("failed to update pipeline")?;
+            pipeline.update_mirror_buffers([mirror_color.clone(), mirror_depth.clone()])?;
         }
         self.update_command_buffers();
 
@@ -475,11 +476,8 @@ impl App {
             if pipeline.reload_shaders(false) {
                 pipeline_changed = true;
             } else if pipeline.get_pipeline().is_none() {
-                pipeline.update_pipeline(
-                    self.device.clone(),
-                    self.viewport.clone(),
-                    self.descriptor_set_allocator.clone(),
-                ).context("failed to update pipeline")?;
+                pipeline.update_pipeline(self.device.clone(), self.viewport.clone())
+                    .context("failed to update pipeline")?;
                 pipeline_changed |= pipeline.get_pipeline().is_some();
             }
         }
